@@ -18,7 +18,7 @@ This is a pnpm workspace (`server`, `client`). Use pnpm, not npm.
 pnpm install
 pnpm --filter critiq-server exec playwright install chromium   # browser binary Playwright needs
 cp server/.env.example server/.env
-pnpm dev                                    # server (:3001, node --watch) + client (Vite) in parallel
+pnpm dev                                    # server (:3001) + client (Vite) in parallel
 ```
 
 The client also has `pnpm --filter critiq-client build`, which runs `tsc -b` and then the Vite build, and `pnpm --filter critiq-client lint`, which runs oxlint. There is no test suite yet.
@@ -51,4 +51,8 @@ The response is `{ url, screenshots: {desktop, mobile}, accessibility, report }`
 - The Vite dev server proxies `/api/*` to `localhost:3001` and strips the prefix, so the client calls `/api/audit` and there is no CORS setup. If the server ever needs a production CORS or static-serving setup, keep this path mapping in mind.
 - `client/src/types/audit.ts` holds the hand-written TypeScript mirror of the response and of `REPORT_SCHEMA`. It is not generated, so update it whenever the schema changes.
 - The `@/` alias points to `client/src`. Add shadcn components with `pnpm dlx shadcn@latest add <name>`, run from `client/`.
-- The server is a plain ESM `.js` package with no TypeScript.
+- `src/hooks/use-audit.ts` is the only place that calls the API. It is a small idle → loading → success/error state machine and aborts any request still in flight.
+- `src/components/audit/` holds the audit UI, one component per file. `src/components/theme/` is a light/dark/system theme, stored in localStorage under `critiq-theme`. An inline script in `index.html` applies the theme before first paint, so keep the two in sync.
+- Status colors are the `success`, `warning` and `info` tokens in `src/index.css`, with light and dark values; `destructive` is used for critical issues. Use these tokens instead of raw Tailwind palette colors.
+- shadcn here uses the **Base UI** flavor (`base-nova`), not Radix. Use the `render` prop instead of `asChild`, and note that ToggleGroup `value` is an array.
+- The server is a plain ESM `.js` package with no TypeScript. Its dev script uses `--watch-path=./src` on purpose: with a plain `--watch`, edits under `client/` restart the server on Windows and kill in-flight audits.
