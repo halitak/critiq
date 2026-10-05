@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch-path=./src src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "compare": "node scripts/compare.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

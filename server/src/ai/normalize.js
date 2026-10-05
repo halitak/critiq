@@ -67,14 +67,22 @@ function cleanFailureSummary(summary) {
 }
 
 const VIEWPORT_WORDS = /\b(desktop|mobile)\b/gi;
-const stripViewport = (title) => title.replace(VIEWPORT_WORDS, '').replace(/\s+/g, ' ').trim();
+const stripViewport = (title) =>
+  title
+    .replace(VIEWPORT_WORDS, '')
+    .replace(/\s+/g, ' ')
+    // "Desktop: Cluttered layout" leaves a dangling ": "
+    .replace(/^[\s:–-]+|[\s:–-]+$/g, '');
+
+/** Identity of an issue across viewports and runs: title without viewport words, lowercased */
+export const titleKey = (title) => stripViewport(title).toLowerCase();
 
 // Small models often report the same issue once per viewport ("Desktop Navigation Bar",
 // "Mobile Navigation Bar"); fold those into a single "both" issue
 function mergeViewports(issues) {
   const byTitle = new Map();
   for (const issue of issues) {
-    const key = stripViewport(issue.title).toLowerCase();
+    const key = titleKey(issue.title);
     const existing = byTitle.get(key);
     if (!existing) {
       byTitle.set(key, { ...issue });

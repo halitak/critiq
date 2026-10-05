@@ -14,7 +14,9 @@ export async function analyze(audit) {
       format: VISUAL_REPORT_SCHEMA,
       // Set explicitly so results don't depend on the Ollama server's defaults.
       // Two screenshots take ~3.5k tokens; a small default context would cut them off.
-      options: { num_ctx: 16384, temperature: 0.1 },
+      // Greedy decoding + fixed seed keep runs as repeatable as the GPU allows
+      // (measure with `pnpm --filter critiq-server compare <url> --runs N`).
+      options: { num_ctx: 16384, temperature: 0, seed: 42 },
       messages: [
         {
           role: 'system',

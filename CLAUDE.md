@@ -23,6 +23,14 @@ pnpm dev                                    # server (:3001) + client (Vite) in 
 
 The client also has `pnpm --filter critiq-client build`, which runs `tsc -b` and then the Vite build, and `pnpm --filter critiq-client lint`, which runs oxlint. There is no test suite yet.
 
+To measure how stable the AI review is, use the compare script. It loads the page once and runs only the AI step N times, so page changes don't skew the numbers. It prints each run's visual score and issue titles, then min/max/mean and how many issues appeared in every run:
+
+```bash
+pnpm --filter critiq-server compare https://example.com --runs 5 --cache /tmp/example.json
+```
+
+`--cache` saves the captured audit, or loads it if the file already exists, so you can compare prompt or model changes on exactly the same input. Run it before and after any prompt or provider change.
+
 To try the endpoint directly:
 
 ```bash
@@ -40,7 +48,7 @@ A request to `POST /audit` runs two stages:
    - `scoreIssues` computes the score as 100 minus 15 per critical, 8 per major and 3 per minor issue, floored at 0. `score` covers all issues; `scores.visual` and `scores.accessibility` apply the same formula to the AI and axe issues separately.
    - Each issue is tagged with `source: "ai" | "axe"`.
 
-**Why axe results never go to the model:** with the axe list in the prompt, the 7B Ollama model just paraphrased it, marked everything critical, duplicated each item per viewport and produced no visual findings. Keep that split. The model doesn't set the score either: its own 0-100 score came out as 75 on every Hacker News run. The score still varies between runs, because the number and severity of AI issues vary; example.com scored 80, 67 and 51 on three runs. Also beware that extra prompt rules can backfire on the 7B model: "don't put desktop/mobile in the title" made it use exactly those words as titles.
+**Why axe results never go to the model:** with the axe list in the prompt, the 7B Ollama model just paraphrased it, marked everything critical, duplicated each item per viewport and produced no visual findings. Keep that split. The model doesn't set the score either: its own 0-100 score came out as 75 on every Hacker News run. Run-to-run variance comes from the AI issues, since the score is computed from their count and severity. At `temperature: 0.1` with a loose severity definition, example.com scored visual 68-81 over 5 runs and Hacker News produced 13 distinct titles with none in every run. With `temperature: 0`, `seed: 42` and the severity rubric plus "if unsure, don't report it", runs on the same input became identical. The exception was the first run after a prompt change, which differed once on Hacker News. Also beware that extra prompt rules can backfire on the 7B model: "don't put desktop/mobile in the title" made it use exactly those words as titles.
 
 The response is `{ url, screenshots: {desktop, mobile}, accessibility, report }`, where `report` is `{ score, scores: {visual, accessibility}, summary, issues }`.
 
@@ -49,7 +57,7 @@ The response is `{ url, screenshots: {desktop, mobile}, accessibility, report }`
 Each provider exports `analyze(audit)` and returns the visual review only.
 
 - `mock` is the default. It needs no API key, waits 1.5s and then returns a fixed visual review. Use it for frontend work.
-- `ollama` is a local model (`OLLAMA_URL`, `OLLAMA_MODEL`, default `qwen2.5vl:7b`). It enforces the schema, including `maxItems`, through Ollama's `format` field, and sets `num_ctx` and `temperature` explicitly. An audit takes about 15-35s locally.
+- `ollama` is a local model (`OLLAMA_URL`, `OLLAMA_MODEL`, default `qwen2.5vl:7b`). It enforces the schema, including `maxItems`, through Ollama's `format` field, and sets `num_ctx`, `temperature: 0` and `seed` explicitly. An audit takes about 5-20s locally.
 - `anthropic` uses Claude (`ANTHROPIC_API_KEY`, `CLAUDE_MODEL`). It gets structured output by forcing a `submit_report` tool call whose `input_schema` is `VISUAL_REPORT_SCHEMA`. The client is created lazily so the other providers work without a key. Tool input doesn't enforce array limits, so `normalizeVisual` caps the issue count.
 
 `src/ai/prompt.js` is shared by the real providers: `SYSTEM_PROMPT`, `VISUAL_REPORT_SCHEMA` and `buildUserText`. The prompt asks for a CSS or HTML snippet in backticks in every suggestion; the client renders backtick spans as inline code. There is deliberately no `minItems`: since the score is penalty-based, forcing a minimum would make the model invent issues on clean pages. Images are always passed in the order desktop, then mobile, and the prompt text depends on that order. If you change the report shape, update `src/ai/index.js`, `src/ai/normalize.js`, the mock and `client/src/types/audit.ts` together.

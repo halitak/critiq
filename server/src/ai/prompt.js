@@ -18,10 +18,18 @@ Report only problems that are actually visible in the screenshots:
 Rules:
 - Base every finding on something you can point to. Name the element and where it is ("the upvote arrows left of each title", "the orange top bar").
 - If a problem appears on both screenshots, report it ONCE with viewport "both". Never write the same issue twice.
-- Severity: "critical" = blocks or seriously hurts use for many users; "major" = clearly hurts usability or readability; "minor" = polish. Use critical rarely.
+- Only report issues you can point to in the screenshot. If unsure, don't report it.
 - Every suggestion must be concrete and include a short CSS or HTML example, e.g. "Give the links 12px vertical padding so each tap target is at least 44px tall: \`.nav a { padding: 12px 8px; }\`".
 - Report up to ${MAX_VISUAL_ISSUES} issues, most impactful first. If the page looks fine, report fewer. Never invent problems to fill the list.
-- summary is 2-3 sentences about the visual design and usability.`;
+- summary is 2-3 sentences about the visual design and usability.
+
+Severity rubric:
+- critical: blocks a user from completing a core task or reading key content
+  (e.g. unreadable text, broken layout hiding the main CTA)
+- major: clearly degrades usability or looks broken to most users
+  (e.g. overlapping elements, tap targets under 44px on mobile)
+- minor: polish issues that don't block anything
+  (e.g. inconsistent spacing, slightly off alignment)`;
 
 export const VISUAL_REPORT_SCHEMA = {
   type: 'object',
