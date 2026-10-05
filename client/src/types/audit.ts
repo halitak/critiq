@@ -1,5 +1,6 @@
 // Mirrors the POST /audit response from the server.
-// Keep `AuditReport` in sync with buildReport in server/src/report.js.
+// Keep `AuditReport` in sync with analyzeAudit in server/src/ai/index.js
+// and `AuditIssue` with server/src/ai/normalize.js.
 
 export type Severity = 'critical' | 'major' | 'minor'
 
@@ -19,6 +20,7 @@ export interface AuditIssue {
   category: IssueCategory
   viewport: Viewport | 'both'
   description: string
+  /** May contain `inline code` in backticks */
   suggestion: string
   /** "ai" = visual review by the model, "axe" = automated accessibility check */
   source: 'ai' | 'axe'
@@ -27,8 +29,9 @@ export interface AuditIssue {
 }
 
 export interface AuditReport {
-  /** 0-100, weighted from `scores` */
+  /** 100 minus severity penalties of all issues (critical 15, major 8, minor 3), floored at 0 */
   score: number
+  /** Same formula applied to just the AI (visual) or axe (accessibility) issues */
   scores: { visual: number; accessibility: number }
   summary: string
   issues: AuditIssue[]

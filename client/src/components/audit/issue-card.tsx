@@ -2,6 +2,7 @@ import { Bot, ExternalLink, Lightbulb, Monitor, MonitorSmartphone, ShieldCheck, 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { AuditIssue } from '@/types/audit'
+import { RichText } from './rich-text'
 import { SeverityBadge } from './severity-badge'
 
 const VIEWPORT_META = {
@@ -39,13 +40,15 @@ export function IssueCard({ issue }: { issue: AuditIssue }) {
         <CardTitle className="text-base">{issue.title}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <p className="leading-relaxed break-words text-muted-foreground">{issue.description}</p>
+        <p className="leading-relaxed break-words text-muted-foreground">
+          <RichText text={issue.description} />
+        </p>
         <div className="flex gap-2 rounded-lg bg-muted/60 p-3">
           <Lightbulb className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
           <div className="flex min-w-0 flex-col gap-1.5">
             <p className="leading-relaxed break-words">
               <span className="sr-only">Suggestion: </span>
-              {issue.suggestion}
+              <RichText text={issue.suggestion} />
             </p>
             {issue.learnMoreUrl && (
               <a
