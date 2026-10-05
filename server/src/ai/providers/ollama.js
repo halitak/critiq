@@ -1,7 +1,25 @@
 import { SYSTEM_PROMPT, VISUAL_REPORT_SCHEMA, buildUserText } from '../prompt.js';
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-const MODEL = process.env.OLLAMA_MODEL || 'qwen2.5vl:7b';
+export const MODEL = process.env.OLLAMA_MODEL || 'qwen2.5vl:7b';
+
+/**
+ * Evicts the model from memory so the next request starts cold, without Ollama's
+ * prompt cache from earlier requests. Used by scripts/compare.js --cold.
+ */
+export async function unload() {
+  await fetch(`${OLLAMA_URL}/api/generate`, {
+    method: 'POST',
+    body: JSON.stringify({ model: MODEL, keep_alive: 0 }),
+  });
+  // Unloading finishes in the background; wait until the model leaves /api/ps
+  for (let i = 0; i < 100; i++) {
+    const { models } = await (await fetch(`${OLLAMA_URL}/api/ps`)).json();
+    if (!models.some((m) => m.name === MODEL)) return;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error(`Ollama did not unload ${MODEL}`);
+}
 
 export async function analyze(audit) {
   const res = await fetch(`${OLLAMA_URL}/api/chat`, {

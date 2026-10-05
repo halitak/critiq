@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
-import { measureMobile } from './measure.js';
+import { MAX_EXAMPLES, measureMobile } from './measure.js';
 
 const VIEWPORTS = {
   desktop: { viewport: { width: 1440, height: 900 } },
@@ -61,7 +61,7 @@ function toViolation(v, viewport) {
     count: v.nodes.length,
     // e.g. "Fix any of the following:\n  Element has insufficient color contrast of 2.9 (...)"
     failureSummary: v.nodes[0]?.failureSummary ?? null,
-    examples: v.nodes.slice(0, 3).map((n) => n.target.join(' ')),
+    examples: v.nodes.slice(0, MAX_EXAMPLES).map((n) => n.target.join(' ')),
     viewport,
   };
 }

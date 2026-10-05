@@ -4,9 +4,12 @@
 
 export const MIN_FONT_PX = 12;
 
+/** Example elements kept per finding (axe violations and measured checks) */
+export const MAX_EXAMPLES = 5;
+
 /** Runs in the mobile context. Returns { smallText, overflow }. */
 export function measureMobile(page) {
-  return page.evaluate((minFontPx) => {
+  return page.evaluate(({ minFontPx, maxExamples }) => {
     const describe = (el) => {
       if (el.id) return `${el.tagName.toLowerCase()}#${el.id}`;
       const cls = [...el.classList].slice(0, 2).join('.');
@@ -34,7 +37,7 @@ export function measureMobile(page) {
 
       const group = bySize.get(size) ?? { fontSize: size, count: 0, examples: [] };
       group.count++;
-      if (group.examples.length < 3) group.examples.push({ text: text.slice(0, 40), selector: describe(el) });
+      if (group.examples.length < maxExamples) group.examples.push({ text: text.slice(0, 40), selector: describe(el) });
       bySize.set(size, group);
     }
 
@@ -53,7 +56,7 @@ export function measureMobile(page) {
       overflow = {
         viewportWidth,
         pageWidth,
-        examples: culprits.slice(0, 3).map((el) => ({
+        examples: culprits.slice(0, maxExamples).map((el) => ({
           selector: describe(el),
           right: Math.round(el.getBoundingClientRect().right),
         })),
@@ -64,5 +67,5 @@ export function measureMobile(page) {
       smallText: [...bySize.values()].sort((a, b) => a.fontSize - b.fontSize),
       overflow,
     };
-  }, MIN_FONT_PX);
+  }, { minFontPx: MIN_FONT_PX, maxExamples: MAX_EXAMPLES });
 }

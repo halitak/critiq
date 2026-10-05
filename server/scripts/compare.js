@@ -1,50 +1,68 @@
 // Measures how stable the AI review is for one page.
 //
-//   pnpm --filter critiq-server compare <url> [--runs N] [--cache file.json]
+//   pnpm --filter critiq-server compare <url> [--runs N] [--cache file.json] [--cold]
 //
 // The page is loaded once (screenshots + axe) and only the AI step runs N times,
 // so the numbers reflect model variance, not changes on the page. With --cache the
 // captured audit is saved to / loaded from a file, so different prompt or model
 // settings can be compared on exactly the same input.
+//
+// --cold (Ollama only) unloads the model before every run. Without it, runs 2..N reuse
+// Ollama's prompt cache for the identical screenshots and tend to repeat each other,
+// which understates the variance a real audit (always fresh screenshots) would see.
+// Pick the model with OLLAMA_MODEL=... in front of the command.
 
 import 'dotenv/config';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { runAudit } from '../src/audit.js';
 import { analyzeAudit } from '../src/ai/index.js';
-import { titleKey } from '../src/ai/normalize.js';
+import { scoreIssues, titleKey } from '../src/ai/normalize.js';
+import * as ollama from '../src/ai/providers/ollama.js';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     runs: { type: 'string', default: '5' },
     cache: { type: 'string' },
+    cold: { type: 'boolean', default: false },
   },
 });
 
 const url = positionals[0];
 const runs = Number(values.runs);
 if (!url || !Number.isInteger(runs) || runs < 1) {
-  console.error('Usage: compare.js <url> [--runs N] [--cache file.json]');
+  console.error('Usage: compare.js <url> [--runs N] [--cache file.json] [--cold]');
+  process.exit(1);
+}
+
+const provider = process.env.AI_PROVIDER || 'mock';
+if (values.cold && provider !== 'ollama') {
+  console.error('--cold only applies to AI_PROVIDER=ollama');
   process.exit(1);
 }
 
 const audit = await loadAudit(url, values.cache);
+const model = provider === 'ollama' ? ` (${ollama.MODEL})` : '';
 console.log(
-  `${audit.url} | provider: ${process.env.AI_PROVIDER || 'mock'} | ${runs} runs | ` +
+  `${audit.url} | provider: ${provider}${model} | ${runs} ${values.cold ? 'cold ' : ''}runs | ` +
     `${audit.accessibility.length} axe violations\n`,
 );
 
 const results = [];
 for (let i = 1; i <= runs; i++) {
+  if (values.cold) await ollama.unload();
+  // With --cold this includes loading the model
   const started = Date.now();
   const report = await analyzeAudit(audit);
   const seconds = (Date.now() - started) / 1000;
   const visual = report.issues.filter((issue) => issue.source === 'ai');
-  results.push({ report, visual });
+  // scores.visual also includes measured checks; this isolates the model's contribution
+  const aiScore = scoreIssues(visual);
+  results.push({ report, visual, aiScore, seconds });
 
   console.log(
-    `Run ${i}: visual ${report.scores.visual}, overall ${report.score}, ` +
+    `Run ${i}: AI ${aiScore}, visual ${report.scores.visual}, overall ${report.score}, ` +
       `${visual.length} AI issues (${seconds.toFixed(1)}s)`,
   );
   for (const issue of visual) console.log(`  - [${issue.severity}] ${issue.title}`);
@@ -72,11 +90,13 @@ for (const issue of fixed) {
 }
 
 console.log('\nSummary');
+console.log(`  AI score:      ${stats(results.map((r) => r.aiScore))}`);
 console.log(`  Visual score:  ${stats(results.map((r) => r.report.scores.visual))}`);
 console.log(`  Overall score: ${stats(results.map((r) => r.report.score))}`);
 console.log(`  AI issues/run: ${stats(results.map((r) => r.visual.length))}`);
 console.log(`  Distinct AI issue titles: ${allKeys.size}`);
 console.log(`  In every run: ${common.length}${common.length ? ` (${common.join(', ')})` : ''}`);
+console.log(`  Seconds/run:   ${stats(results.map((r) => Math.round(r.seconds)))}`);
 
 async function loadAudit(url, cacheFile) {
   if (cacheFile && existsSync(cacheFile)) {

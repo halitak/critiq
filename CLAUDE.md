@@ -23,13 +23,17 @@ pnpm dev                                    # server (:3001) + client (Vite) in 
 
 The client also has `pnpm --filter critiq-client build`, which runs `tsc -b` and then the Vite build, and `pnpm --filter critiq-client lint`, which runs oxlint. There is no test suite yet.
 
-To measure how stable the AI review is, use the compare script. It loads the page once and runs only the AI step N times, so page changes don't skew the numbers. It prints each run's visual score and issue titles, then min/max/mean and how many issues appeared in every run:
+To measure how stable the AI review is, use the compare script. It loads the page once and runs only the AI step N times, so page changes don't skew the numbers. For each run it prints the AI-only score, the visual score (AI + measured checks) and the issue titles. At the end it prints min/max/mean, how many issues appeared in every run, and the deterministic non-AI issues:
 
 ```bash
-pnpm --filter critiq-server compare https://example.com --runs 5 --cache /tmp/example.json
+pnpm --filter critiq-server compare https://example.com --runs 5 --cold --cache /tmp/example.json
 ```
 
-`--cache` saves the captured audit, or loads it if the file already exists, so you can compare prompt or model changes on exactly the same input. Run it before and after any prompt or provider change.
+- `--cache` saves the captured audit, or loads it if the file already exists. This lets you compare prompt or model changes on exactly the same input.
+- `--cold` (Ollama only) unloads the model before each run. **Always use it when measuring variance.** Without it, Ollama's prompt cache makes runs 2..N repeat each other.
+- Choose the model per command with `OLLAMA_MODEL=gemma3:12b AI_PROVIDER=ollama pnpm --filter critiq-server compare ...`.
+
+Run it before and after any prompt or provider change.
 
 To try the endpoint directly:
 
@@ -45,15 +49,21 @@ A request to `POST /audit` runs two stages:
    - **Desktop:** axe-core runs its full default rule set. Those violations get `viewport: "both"`, since the DOM is shared by both viewports.
    - **Mobile:** axe runs only `target-size` (`viewport: "mobile"`). This WCAG 2.2 rule is **disabled by default** in axe 4.13. Enable it with `withRules`; `withTags(['wcag22aa'])` would also turn off every other rule. Tap-target size comes from axe rather than a hand-rolled size check because axe applies the WCAG 2.5.8 spacing and inline-link exceptions.
    - **Mobile:** `src/measure.js` measures visible text below 12px (grouped by font size, punctuation-only text skipped) and horizontal page overflow. Overflow is reported only if the page itself scrolls sideways. The result is stored in `checks`.
-   - axe violations are reduced to `{id, impact, help, helpUrl, count, examples[≤3], failureSummary, viewport}`.
+   - axe violations are reduced to `{id, impact, help, helpUrl, count, examples[≤5], failureSummary, viewport}`.
 2. **`src/ai/index.js` (`analyzeAudit`)**: sends **only the screenshots** to the provider named by `AI_PROVIDER`. The model does a visual and UX review and returns `{ summary, issues }` (`VISUAL_REPORT_SCHEMA`, no score). It then builds the report with the deterministic helpers in `src/ai/normalize.js`:
    - `normalizeAxe` turns axe violations into issues. Impact maps to severity (critical→critical, serious→major, moderate/minor→minor), viewport comes from where the rule ran, `target-size` gets the `responsive` category, the first line of `failureSummary` becomes the suggestion, and `helpUrl` becomes `learnMoreUrl`, which the client renders as a link.
    - `normalizeVisual` folds AI issues whose titles differ only by "desktop"/"mobile" into one `both` issue and caps the count.
    - `normalizeChecks` turns `checks` into issues with fixed severities: small text is minor, horizontal overflow is major.
    - `scoreIssues` computes the score as 100 minus 15 per critical, 8 per major and 3 per minor issue, floored at 0. `score` covers all issues. `scores.visual` applies the same formula to the AI and measured-check issues, and `scores.accessibility` to the axe issues.
-   - Each issue is tagged with `source: "ai" | "axe" | "check"`. The prompt tells the model that tap targets, text under 12px and horizontal overflow are already measured, so it doesn't duplicate them.
+   - Each issue is tagged with `source: "ai" | "axe" | "check"`. The prompt tells the model that tap targets, text under 12px and horizontal overflow are already measured, so it doesn't duplicate them. The model's job is only the holistic review that code can't do: visual hierarchy, consistency, how prominent the primary action is, and whether the mobile layout feels designed for a phone.
 
-**Why axe results never go to the model:** with the axe list in the prompt, the 7B Ollama model just paraphrased it, marked everything critical, duplicated each item per viewport and produced no visual findings. Keep that split. The model doesn't set the score either: its own 0-100 score came out as 75 on every Hacker News run. Run-to-run variance comes from the AI issues, since the score is computed from their count and severity. At `temperature: 0.1` with a loose severity definition, example.com scored visual 68-81 over 5 runs and Hacker News produced 13 distinct titles with none in every run. With `temperature: 0`, `seed: 42` and the severity rubric plus "if unsure, don't report it", runs on the same input became identical, except the first one. That identity is likely partly an artifact of Ollama's prompt cache (not verified). Run 1 processes the screenshots from scratch, runs 2..N reuse the cached prefix, and run 1 often differs: in 3 of 4 measurements, e.g. Hacker News visual 82 vs 91. A real audit always has fresh screenshots, so **run 1 is the realistic one**, and the true run-to-run spread is larger than runs 2..N suggest. To measure it, compare run 1 across separate invocations. Also beware that extra prompt rules can backfire on the 7B model: "don't put desktop/mobile in the title" made it use exactly those words as titles.
+**Why axe results never go to the model:** with the axe list in the prompt, the 7B Ollama model just paraphrased it, marked everything critical, duplicated each item per viewport and produced no visual findings. Keep that split. The model doesn't set the score either: its own 0-100 score came out as 75 on every Hacker News run. Run-to-run variance comes from the AI issues, since the score is computed from their count and severity. At `temperature: 0.1` with a loose severity definition, example.com scored visual 68-81 over 5 runs and Hacker News produced 13 distinct titles with none in every run. With `temperature: 0`, `seed: 42` and the severity rubric plus "if unsure, don't report it", runs on the same input became nearly identical. The first run after a prompt change sometimes differed. That was suspected to be Ollama's prompt cache, but `--cold` runs, which unload the model each time, were just as stable: example.com gave the same result 5/5 on both models, and Hacker News on qwen gave AI scores of 61 and 64. So per-page determinism is real; the remaining risk is quality, not variance.
+
+**Penalty scoring saturates:** Hacker News scores 0 overall with either model, because 9 axe/check issues plus up to 8 AI issues exceed 100 points of penalty, so a bad page and a terrible page look the same.
+
+**Models measured (5 cold runs each):**
+- `qwen2.5vl:7b` takes 17-20s per run warm. It hallucinates on Hacker News ("No upvote arrows visible", "No downvote count visible").
+- `gemma3:12b` takes 27-31s per run. It follows the holistic-review focus much better: visual hierarchy, inconsistent arrow placement, login button weight. It still sometimes repeats measured topics, such as reduced font size and an overflow that doesn't exist. Also beware that extra prompt rules can backfire on the 7B model: "don't put desktop/mobile in the title" made it use exactly those words as titles.
 
 The response is `{ url, screenshots: {desktop, mobile}, accessibility, checks, report }`, where `report` is `{ score, scores: {visual, accessibility}, summary, issues }`.
 

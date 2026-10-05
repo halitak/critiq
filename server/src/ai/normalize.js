@@ -4,7 +4,7 @@
 // The issue shape is mirrored by client/src/types/audit.ts (AuditIssue).
 
 import { MAX_VISUAL_ISSUES } from './prompt.js';
-import { MIN_FONT_PX } from '../measure.js';
+import { MAX_EXAMPLES, MIN_FONT_PX } from '../measure.js';
 
 // axe impact -> report severity
 const AXE_SEVERITY = {
@@ -64,7 +64,7 @@ export function normalizeChecks(checks) {
     const sizes = checks.smallText.map((g) => `${g.fontSize}px`).join(', ');
     const examples = checks.smallText
       .flatMap((g) => g.examples.map((e) => `"${e.text}" (\`${e.selector}\`, ${g.fontSize}px)`))
-      .slice(0, 3)
+      .slice(0, MAX_EXAMPLES)
       .join(', ');
     issues.push({
       title: `Text smaller than ${MIN_FONT_PX}px on mobile`,

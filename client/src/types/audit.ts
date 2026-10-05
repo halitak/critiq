@@ -47,7 +47,7 @@ export interface AccessibilityViolation {
   help: string
   helpUrl: string
   count: number
-  /** Up to 3 CSS selectors */
+  /** Up to 5 CSS selectors */
   examples: string[]
   /** axe fix hints for the first affected element */
   failureSummary: string | null
