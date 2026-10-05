@@ -1,0 +1,7 @@
+{
+  "name": "critiq",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --filter ./server --filter ./client dev"
+  }
+}

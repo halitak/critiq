@@ -8,28 +8,26 @@ Critiq is an AI-powered UI/UX auditor for developers. Given a URL, it screenshot
 
 **MVP scope (deliberately small):** one URL per audit, no accounts or login, no audit history. Don't add these without being asked. Screenshot upload as an alternative input is a possible later feature and is not in the MVP.
 
-**Stack:** React + Vite frontend (planned, `client/`), Node + Express backend (`server/`), Playwright, axe-core, Anthropic SDK. Deploy targets are Railway or Render. **Not Vercel or other serverless hosts**, because Playwright needs a full Chromium.
+**Stack:** React + Vite + TypeScript frontend with Tailwind v4 and shadcn/ui (`client/`), Node + Express backend (`server/`), Playwright, axe-core, Anthropic SDK. Deploy targets are Railway or Render. **Not Vercel or other serverless hosts**, because Playwright needs a full Chromium.
 
 ## Commands
 
-Only the backend exists so far.
-
-Run these from `server/`. It is Node ESM (`"type": "module"`).
+This is a pnpm workspace (`server`, `client`). Use pnpm, not npm.
 
 ```bash
-npm install
-npx playwright install chromium   # browser binary Playwright needs
-cp .env.example .env
-npm run dev                       # node --watch, port 3001 (PORT env overrides)
+pnpm install
+pnpm --filter critiq-server exec playwright install chromium   # browser binary Playwright needs
+cp server/.env.example server/.env
+pnpm dev                                    # server (:3001, node --watch) + client (Vite) in parallel
 ```
 
-Try the endpoint:
+The client also has `pnpm --filter critiq-client build`, which runs `tsc -b` and then the Vite build, and `pnpm --filter critiq-client lint`, which runs oxlint. There is no test suite yet.
+
+To try the endpoint directly:
 
 ```bash
 curl -X POST http://localhost:3001/audit -H "Content-Type: application/json" -d '{"url":"https://example.com"}'
 ```
-
-There is no test suite, linter or build step yet.
 
 ## Architecture
 
@@ -47,3 +45,10 @@ The response is `{ url, screenshots: {desktop, mobile}, accessibility, report }`
 - `anthropic` uses Claude (`ANTHROPIC_API_KEY`, `CLAUDE_MODEL`). It gets structured output by forcing a `submit_report` tool call whose `input_schema` is `REPORT_SCHEMA`. The client is created lazily so the other providers work without a key.
 
 `src/ai/prompt.js` is shared by every real provider: `SYSTEM_PROMPT`, `REPORT_SCHEMA` (the API contract for `report`) and `buildUserText`. Images are always passed in the order desktop, then mobile, and the prompt text depends on that order. If you change the report shape, update `REPORT_SCHEMA` and the mock report together, because the frontend will rely on both.
+
+### Client
+
+- The Vite dev server proxies `/api/*` to `localhost:3001` and strips the prefix, so the client calls `/api/audit` and there is no CORS setup. If the server ever needs a production CORS or static-serving setup, keep this path mapping in mind.
+- `client/src/types/audit.ts` holds the hand-written TypeScript mirror of the response and of `REPORT_SCHEMA`. It is not generated, so update it whenever the schema changes.
+- The `@/` alias points to `client/src`. Add shadcn components with `pnpm dlx shadcn@latest add <name>`, run from `client/`.
+- The server is a plain ESM `.js` package with no TypeScript.

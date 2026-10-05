@@ -34,6 +34,11 @@ app.post('/audit', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+app.listen(PORT, (err) => {
+  // Express 5 passes listen errors (e.g. EADDRINUSE) here instead of throwing
+  if (err) {
+    console.error(`Could not start server on port ${PORT}:`, err.message);
+    process.exit(1);
+  }
   console.log(`Critiq server running on http://localhost:${PORT}`);
 });
