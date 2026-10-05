@@ -1,4 +1,4 @@
-import { Bot, ExternalLink, Lightbulb, Monitor, MonitorSmartphone, ShieldCheck, Smartphone } from 'lucide-react'
+import { Bot, ExternalLink, Lightbulb, Monitor, MonitorSmartphone, Ruler, ShieldCheck, Smartphone } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { AuditIssue } from '@/types/audit'
@@ -14,6 +14,7 @@ const VIEWPORT_META = {
 const SOURCE_META = {
   ai: { label: 'AI review', Icon: Bot },
   axe: { label: 'Automated check', Icon: ShieldCheck },
+  check: { label: 'Measured', Icon: Ruler },
 } as const
 
 export function IssueCard({ issue }: { issue: AuditIssue }) {

@@ -60,6 +60,17 @@ const keysPerRun = results.map(({ visual }) => new Set(visual.map((issue) => tit
 const allKeys = new Set(keysPerRun.flatMap((keys) => [...keys]));
 const common = [...allKeys].filter((key) => keysPerRun.every((keys) => keys.has(key)));
 
+// axe and measured-check issues don't depend on the model, so one run shows them all
+const fixed = results[0].report.issues.filter((issue) => issue.source !== 'ai');
+console.log(`\nNon-AI issues (identical every run): ${fixed.length}`);
+for (const issue of fixed) {
+  console.log(`  - [${issue.source} ${issue.severity}/${issue.viewport}] ${issue.title}`);
+  // Mobile-only findings (target-size, measured checks) are the ones worth eyeballing
+  if (issue.viewport === 'mobile') {
+    console.log(`      ${issue.description}`);
+  }
+}
+
 console.log('\nSummary');
 console.log(`  Visual score:  ${stats(results.map((r) => r.report.scores.visual))}`);
 console.log(`  Overall score: ${stats(results.map((r) => r.report.score))}`);

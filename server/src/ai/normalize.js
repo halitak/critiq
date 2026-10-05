@@ -1,8 +1,10 @@
-// Turns raw provider output and axe-core results into report issues, and scores them.
-// Everything here is deterministic; the model never sees axe results or sets the score.
+// Turns raw provider output, axe-core results and measured layout checks into report
+// issues, and scores them. Everything here is deterministic; the model never sees axe
+// or check results and never sets the score.
 // The issue shape is mirrored by client/src/types/audit.ts (AuditIssue).
 
 import { MAX_VISUAL_ISSUES } from './prompt.js';
+import { MIN_FONT_PX } from '../measure.js';
 
 // axe impact -> report severity
 const AXE_SEVERITY = {
@@ -10,6 +12,12 @@ const AXE_SEVERITY = {
   serious: 'major',
   moderate: 'minor',
   minor: 'minor',
+};
+
+// Rules that fit a more specific category than "accessibility"
+const AXE_CATEGORY = {
+  'color-contrast': 'color',
+  'target-size': 'responsive',
 };
 
 // Points taken off 100 per issue
@@ -33,9 +41,10 @@ export function normalizeAxe(accessibility) {
     return {
       title: v.help,
       severity: AXE_SEVERITY[v.impact] ?? 'minor',
-      category: v.id === 'color-contrast' ? 'color' : 'accessibility',
-      // axe checks the DOM, which is the same on both viewports
-      viewport: 'both',
+      category: AXE_CATEGORY[v.id] ?? 'accessibility',
+      // The full rule set runs on desktop and covers the DOM shared by both viewports ("both");
+      // target-size runs on mobile only
+      viewport: v.viewport ?? 'both',
       description: `Found on ${elements}${examples}.`,
       suggestion: cleanFailureSummary(v.failureSummary) ?? `See the axe rule "${v.id}".`,
       // Rendered as a link by the client rather than pasted into the suggestion text
@@ -43,6 +52,46 @@ export function normalizeAxe(accessibility) {
       source: 'axe',
     };
   });
+}
+
+/** Issues from measured layout checks (src/measure.js) */
+export function normalizeChecks(checks) {
+  if (!checks) return [];
+  const issues = [];
+
+  if (checks.smallText.length) {
+    const count = checks.smallText.reduce((sum, g) => sum + g.count, 0);
+    const sizes = checks.smallText.map((g) => `${g.fontSize}px`).join(', ');
+    const examples = checks.smallText
+      .flatMap((g) => g.examples.map((e) => `"${e.text}" (\`${e.selector}\`, ${g.fontSize}px)`))
+      .slice(0, 3)
+      .join(', ');
+    issues.push({
+      title: `Text smaller than ${MIN_FONT_PX}px on mobile`,
+      severity: 'minor',
+      category: 'typography',
+      viewport: 'mobile',
+      description: `${count} text ${count === 1 ? 'element is' : 'elements are'} rendered at ${sizes}, e.g. ${examples}.`,
+      suggestion: `Use at least ${MIN_FONT_PX}px (ideally 16px for body text) on small screens: \`@media (max-width: 640px) { body { font-size: 16px; } }\``,
+      source: 'check',
+    });
+  }
+
+  if (checks.overflow) {
+    const { viewportWidth, pageWidth, examples } = checks.overflow;
+    const culprits = examples.map((e) => `\`${e.selector}\` (right edge at ${e.right}px)`).join(', ');
+    issues.push({
+      title: 'Page scrolls horizontally on mobile',
+      severity: 'major',
+      category: 'responsive',
+      viewport: 'mobile',
+      description: `The page is ${pageWidth}px wide on a ${viewportWidth}px screen.${culprits ? ` Sticking out: ${culprits}.` : ''}`,
+      suggestion: 'Constrain wide elements to the viewport: `img, table, pre { max-width: 100%; } pre { overflow-x: auto; }`',
+      source: 'check',
+    });
+  }
+
+  return issues;
 }
 
 export function normalizeVisual(issues) {

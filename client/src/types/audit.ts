@@ -22,8 +22,11 @@ export interface AuditIssue {
   description: string
   /** May contain `inline code` in backticks */
   suggestion: string
-  /** "ai" = visual review by the model, "axe" = automated accessibility check */
-  source: 'ai' | 'axe'
+  /**
+   * "ai" = visual review by the model, "axe" = automated accessibility check,
+   * "check" = measured in the browser (small text, horizontal overflow)
+   */
+  source: 'ai' | 'axe' | 'check'
   /** Rule docs, axe issues only */
   learnMoreUrl?: string
 }
@@ -31,7 +34,7 @@ export interface AuditIssue {
 export interface AuditReport {
   /** 100 minus severity penalties of all issues (critical 15, major 8, minor 3), floored at 0 */
   score: number
-  /** Same formula applied to just the AI (visual) or axe (accessibility) issues */
+  /** Same formula applied to just the AI + check (visual) or axe (accessibility) issues */
   scores: { visual: number; accessibility: number }
   summary: string
   issues: AuditIssue[]
@@ -48,6 +51,18 @@ export interface AccessibilityViolation {
   examples: string[]
   /** axe fix hints for the first affected element */
   failureSummary: string | null
+  /** Full rule set runs on desktop ("both"); target-size runs on mobile */
+  viewport: Viewport | 'both'
+}
+
+/** Measured in the mobile context by server/src/measure.js */
+export interface LayoutChecks {
+  smallText: { fontSize: number; count: number; examples: { text: string; selector: string }[] }[]
+  overflow: {
+    viewportWidth: number
+    pageWidth: number
+    examples: { selector: string; right: number }[]
+  } | null
 }
 
 export interface AuditResponse {
@@ -55,6 +70,7 @@ export interface AuditResponse {
   /** Base64-encoded JPEGs */
   screenshots: Record<Viewport, string>
   accessibility: AccessibilityViolation[]
+  checks: LayoutChecks | null
   report: AuditReport
 }
 

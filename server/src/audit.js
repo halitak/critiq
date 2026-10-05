@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
+import { measureMobile } from './measure.js';
 
 const VIEWPORTS = {
   desktop: { viewport: { width: 1440, height: 900 } },
@@ -17,7 +18,7 @@ export async function runAudit(url) {
   const browser = await chromium.launch();
 
   try {
-    const result = { url, screenshots: {}, accessibility: [] };
+    const result = { url, screenshots: {}, accessibility: [], checks: null };
 
     for (const [name, contextOptions] of Object.entries(VIEWPORTS)) {
       const context = await browser.newContext(contextOptions);
@@ -30,19 +31,16 @@ export async function runAudit(url) {
       const screenshot = await page.screenshot({ type: 'jpeg', quality: 70 });
       result.screenshots[name] = screenshot.toString('base64');
 
-      // axe results are mostly viewport-independent, run once on desktop
       if (name === 'desktop') {
+        // The full rule set is mostly viewport-independent, so it runs once
         const axe = await new AxeBuilder({ page }).analyze();
-        result.accessibility = axe.violations.map((v) => ({
-          id: v.id,
-          impact: v.impact,
-          help: v.help,
-          helpUrl: v.helpUrl,
-          count: v.nodes.length,
-          // e.g. "Fix any of the following:\n  Element has insufficient color contrast of 2.9 (...)"
-          failureSummary: v.nodes[0]?.failureSummary ?? null,
-          examples: v.nodes.slice(0, 3).map((n) => n.target.join(' ')),
-        }));
+        result.accessibility.push(...axe.violations.map((v) => toViolation(v, 'both')));
+      } else {
+        // target-size (WCAG 2.2, 2.5.8) is off by default and matters most on touch screens.
+        // withRules runs only this rule, so desktop findings aren't duplicated.
+        const axe = await new AxeBuilder({ page }).withRules(['target-size']).analyze();
+        result.accessibility.push(...axe.violations.map((v) => toViolation(v, 'mobile')));
+        result.checks = await measureMobile(page);
       }
 
       await context.close();
@@ -52,4 +50,18 @@ export async function runAudit(url) {
   } finally {
     await browser.close();
   }
+}
+
+function toViolation(v, viewport) {
+  return {
+    id: v.id,
+    impact: v.impact,
+    help: v.help,
+    helpUrl: v.helpUrl,
+    count: v.nodes.length,
+    // e.g. "Fix any of the following:\n  Element has insufficient color contrast of 2.9 (...)"
+    failureSummary: v.nodes[0]?.failureSummary ?? null,
+    examples: v.nodes.slice(0, 3).map((n) => n.target.join(' ')),
+    viewport,
+  };
 }
