@@ -7,9 +7,10 @@
 // captured audit is saved to / loaded from a file, so different prompt or model
 // settings can be compared on exactly the same input.
 //
-// --cold (Ollama only) unloads the model before every run. Without it, runs 2..N reuse
-// Ollama's prompt cache for the identical screenshots and tend to repeat each other,
-// which understates the variance a real audit (always fresh screenshots) would see.
+// --cold (Ollama only) unloads the model before every run, so each run starts like a
+// real audit instead of reusing Ollama's prompt cache for the identical screenshots.
+// In practice cold and warm runs were equally stable, but cold rules the cache out
+// and its timings include model loading.
 // Pick the model with OLLAMA_MODEL=... in front of the command.
 
 import 'dotenv/config';

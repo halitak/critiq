@@ -20,17 +20,22 @@ const AXE_CATEGORY = {
   'target-size': 'responsive',
 };
 
-// Points taken off 100 per issue
-const SEVERITY_PENALTY = { critical: 15, major: 8, minor: 3 };
+// Share of the remaining score each issue takes away
+const SEVERITY_PENALTY = { critical: 0.15, major: 0.08, minor: 0.03 };
 
 const SEVERITY_RANK = { critical: 0, major: 1, minor: 2 };
 
 export const bySeverity = (a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
 
-/** 100 minus the severity penalties of the given issues, floored at 0 */
+/**
+ * Each issue removes a share of what's left (critical 15%, major 8%, minor 3%).
+ * One issue costs the same as flat points would (critical -> 85), but many issues
+ * no longer bottom out at 0: Hacker News used to score 0 with both models, so a
+ * bad page and a terrible page looked the same.
+ */
 export function scoreIssues(issues) {
-  const penalty = issues.reduce((sum, i) => sum + SEVERITY_PENALTY[i.severity], 0);
-  return Math.max(0, 100 - penalty);
+  const remaining = issues.reduce((score, i) => score * (1 - SEVERITY_PENALTY[i.severity]), 1);
+  return Math.round(100 * remaining);
 }
 
 export function normalizeAxe(accessibility) {

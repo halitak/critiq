@@ -1,11 +1,11 @@
 import { SYSTEM_PROMPT, VISUAL_REPORT_SCHEMA, buildUserText } from '../prompt.js';
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-export const MODEL = process.env.OLLAMA_MODEL || 'qwen2.5vl:7b';
+export const MODEL = process.env.OLLAMA_MODEL || 'gemma3:12b';
 
 /**
- * Evicts the model from memory so the next request starts cold, without Ollama's
- * prompt cache from earlier requests. Used by scripts/compare.js --cold.
+ * Evicts the model from memory so the next request starts like a fresh audit
+ * (model load, empty prompt cache). Used by scripts/compare.js --cold.
  */
 export async function unload() {
   await fetch(`${OLLAMA_URL}/api/generate`, {
