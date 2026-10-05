@@ -131,7 +131,7 @@ export function normalizeVisual(issues) {
       })
       // Schema limits aren't enforced by every provider (e.g. Anthropic tool input)
       .slice(0, MAX_VISUAL_ISSUES)
-      .map((issue) => ({ ...issue, source: 'ai' }))
+      .map((issue) => ({ ...issue, title: stripViewportPrefix(issue.title), source: 'ai' }))
   );
 }
 
@@ -154,6 +154,10 @@ const stripViewport = (title) =>
     .replace(/\s+/g, ' ')
     // "Desktop: Cluttered layout" leaves a dangling ": "
     .replace(/^[\s:–-]+|[\s:–-]+$/g, '');
+
+// gemma3 labels titles like "Mobile: ..." or "Both: ..."; the UI already shows the viewport.
+// Only a leading "label:" is removed, so "Mobile layout feels squeezed" stays as is.
+const stripViewportPrefix = (title) => title.replace(/^(desktop|mobile|both)\s*:\s*/i, '');
 
 /** Identity of an issue across viewports and runs: title without viewport words, lowercased */
 export const titleKey = (title) => stripViewport(title).toLowerCase();

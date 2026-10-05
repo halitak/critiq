@@ -3,7 +3,7 @@
 // severities, all in code (see ./normalize.js), so the model can't paraphrase those
 // results or invent a score.
 
-export const MAX_VISUAL_ISSUES = 8;
+export const MAX_VISUAL_ISSUES = 5;
 
 export const SYSTEM_PROMPT = `You are a senior UI/UX designer reviewing screenshots of a web page.
 You get two screenshots: the first is desktop (1440x900 viewport), the second is mobile (390x844 viewport, rendered at 2x so the image is 780x1688).
@@ -16,11 +16,12 @@ Your job is the holistic review that code can't do. Focus on:
 - mobile adaptation: does the mobile layout feel designed for a phone, or like the desktop page squeezed down? (category: responsive)
 
 Rules:
+- Report only what a senior designer would actually raise in a design review: usually 1 to 4 issues. A polished page may have one minor issue or none. An empty list is a valid answer. Do not pad the list with nitpicks.
 - Base every finding on something you can point to. Name the element and where it is ("the upvote arrows left of each title", "the orange top bar").
 - If a problem appears on both screenshots, report it ONCE with viewport "both". Never write the same issue twice.
 - Only report issues you can point to in the screenshot. If unsure, don't report it.
 - Every suggestion must be concrete and include a short CSS or HTML example, e.g. "Give the article text more line height so long paragraphs are easier to follow: \`.post p { line-height: 1.6; }\`".
-- Report up to ${MAX_VISUAL_ISSUES} issues, most impactful first. If the page looks fine, report fewer. Never invent problems to fill the list.
+- Never report more than ${MAX_VISUAL_ISSUES} issues, most impactful first.
 - summary is 2-3 sentences about the visual design and usability.
 
 Severity rubric:

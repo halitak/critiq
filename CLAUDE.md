@@ -62,7 +62,16 @@ A request to `POST /audit` runs two stages:
 **Why the score is multiplicative:** flat points (100 minus 15/8/3 per issue, floored at 0) saturated. Hacker News scored 0 with both models, so a bad page and a terrible page looked the same. With the same issues, the multiplicative score gives Hacker News 35 and example.com 66, where flat points gave 0 and 60. A single issue costs the same under both formulas. Don't switch back to subtracting points.
 
 **Models measured (5 cold runs each):**
-- `gemma3:12b` is the default. It takes 27-31s per run and follows the holistic-review focus much better: visual hierarchy, inconsistent arrow placement, login button weight. It repeats measured topics, such as reduced font size, contrast and an overflow that doesn't exist; `normalizeVisual` filters these out. It also tends to fill the list (7 issues on example.com, 6 after filtering).
+- `gemma3:12b` is the default. It takes 27-31s per run and follows the holistic-review focus much better: visual hierarchy, inconsistent arrow placement, login button weight. It repeats measured topics, such as reduced font size, contrast and an overflow that doesn't exist; `normalizeVisual` filters these out. It also used to fill the list; see below.
+
+**List padding (gemma3:12b, measured on cached Hacker News, example.com and stripe.com):**
+- **Original prompt:** "up to 8, report fewer if the page looks fine". The model gave 6-8 issues per page, mostly filler minors ("Global GDP statistic is visually distracting"). Polished Stripe scored *worse* than Hacker News on the AI score (74 vs 79).
+- **Current prompt:** "what a senior designer would actually raise: usually 1 to 4; an empty list is valid; don't pad", with `MAX_VISUAL_ISSUES = 5`. This gives 3 relevant issues per page, stable across cold runs, and about 20s per audit instead of about 30s.
+- **Dropping the number** ("how many depends on the page") brought padding back: Stripe hit the cap at 5.
+- **A per-issue `confidence: high | taste` field** carried no signal. The model marked exactly the last of 3 issues as "taste" on every page, so it was removed.
+- **Known limit:** the model can't tell polished from rough pages, so the AI score is about 82-87 everywhere. Differences between pages come from the axe and measured issues: Hacker News 43, Stripe 73, example.com 75 overall.
+
+`normalizeVisual` also strips leading "Mobile:", "Desktop:" and "Both:" labels from AI titles, because the UI already shows the viewport.
 - `qwen2.5vl:7b` takes 17-20s per run warm. It hallucinates on Hacker News ("No upvote arrows visible", "No downvote count visible").
 
 Also beware that extra prompt rules can backfire on small models: "don't put desktop/mobile in the title" made qwen2.5vl use exactly those words as titles.
