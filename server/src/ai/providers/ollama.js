@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT, REPORT_SCHEMA, buildUserText } from '../prompt.js';
+import { SYSTEM_PROMPT, VISUAL_REPORT_SCHEMA, buildUserText } from '../prompt.js';
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const MODEL = process.env.OLLAMA_MODEL || 'qwen2.5vl:7b';
@@ -11,9 +11,15 @@ export async function analyze(audit) {
       model: MODEL,
       stream: false,
       // Ollama constrains the output to this JSON schema
-      format: REPORT_SCHEMA,
+      format: VISUAL_REPORT_SCHEMA,
+      // Set explicitly so results don't depend on the Ollama server's defaults.
+      // Two screenshots take ~3.5k tokens; a small default context would cut them off.
+      options: { num_ctx: 16384, temperature: 0.1 },
       messages: [
-        { role: 'system', content: `${SYSTEM_PROMPT}\nRespond only with JSON.` },
+        {
+          role: 'system',
+          content: `${SYSTEM_PROMPT}\nRespond only with JSON.`,
+        },
         {
           role: 'user',
           content: buildUserText(audit),

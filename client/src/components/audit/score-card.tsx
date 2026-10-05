@@ -41,6 +41,16 @@ export function ScoreCard({ report }: { report: AuditReport }) {
             </div>
           </div>
           <span className={cn('text-sm font-medium', tone.text)}>{tone.label}</span>
+          <dl className="mt-1 grid w-full grid-cols-2 gap-2 border-t pt-3 text-center text-xs">
+            <div>
+              <dt className="text-muted-foreground">Visual</dt>
+              <dd className="font-medium tabular-nums">{report.scores.visual}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Accessibility</dt>
+              <dd className="font-medium tabular-nums">{report.scores.accessibility}</dd>
+            </div>
+          </dl>
         </CardContent>
       </Card>
 

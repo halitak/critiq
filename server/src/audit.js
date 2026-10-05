@@ -37,7 +37,10 @@ export async function runAudit(url) {
           id: v.id,
           impact: v.impact,
           help: v.help,
+          helpUrl: v.helpUrl,
           count: v.nodes.length,
+          // e.g. "Fix any of the following:\n  Element has insufficient color contrast of 2.9 (...)"
+          failureSummary: v.nodes[0]?.failureSummary ?? null,
           examples: v.nodes.slice(0, 3).map((n) => n.target.join(' ')),
         }));
       }

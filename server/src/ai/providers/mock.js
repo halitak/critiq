@@ -1,5 +1,6 @@
-// Fake report for frontend work: free, instant, deterministic
-export async function analyze(audit) {
+// Fake visual review for frontend work: free, instant, deterministic.
+// axe issues are added by buildReport, same as for the real providers.
+export async function analyze() {
   await new Promise((r) => setTimeout(r, 1500)); // simulate latency
 
   return {
@@ -31,14 +32,6 @@ export async function analyze(audit) {
         description: 'Section headings use three different font sizes with no clear pattern.',
         suggestion: 'Define a type scale (e.g. 32/24/18px) and apply it consistently.',
       },
-      ...audit.accessibility.slice(0, 3).map((v) => ({
-        title: v.help,
-        severity: v.impact === 'critical' || v.impact === 'serious' ? 'major' : 'minor',
-        category: 'accessibility',
-        viewport: 'both',
-        description: `Found on ${v.count} element(s), e.g. ${v.examples[0] ?? 'n/a'}.`,
-        suggestion: `See the axe rule "${v.id}" for how to fix it.`,
-      })),
     ],
   };
 }

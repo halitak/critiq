@@ -1,5 +1,5 @@
 // Mirrors the POST /audit response from the server.
-// Keep `AuditReport` in sync with REPORT_SCHEMA in server/src/ai/prompt.js.
+// Keep `AuditReport` in sync with buildReport in server/src/report.js.
 
 export type Severity = 'critical' | 'major' | 'minor'
 
@@ -20,11 +20,16 @@ export interface AuditIssue {
   viewport: Viewport | 'both'
   description: string
   suggestion: string
+  /** "ai" = visual review by the model, "axe" = automated accessibility check */
+  source: 'ai' | 'axe'
+  /** Rule docs, axe issues only */
+  learnMoreUrl?: string
 }
 
 export interface AuditReport {
-  /** 0-100 */
+  /** 0-100, weighted from `scores` */
   score: number
+  scores: { visual: number; accessibility: number }
   summary: string
   issues: AuditIssue[]
 }
@@ -34,9 +39,12 @@ export interface AccessibilityViolation {
   id: string
   impact: 'minor' | 'moderate' | 'serious' | 'critical' | null
   help: string
+  helpUrl: string
   count: number
   /** Up to 3 CSS selectors */
   examples: string[]
+  /** axe fix hints for the first affected element */
+  failureSummary: string | null
 }
 
 export interface AuditResponse {
