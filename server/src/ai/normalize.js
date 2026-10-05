@@ -99,9 +99,36 @@ export function normalizeChecks(checks) {
   return issues;
 }
 
+// Topics that axe or measure.js already decide precisely. The prompt says not to report
+// them, but gemma3 still did ("Mobile: Reduced Font Size", and "Mobile: Content Overflow"
+// on a page that doesn't overflow), so AI issues on these topics are dropped: either the
+// code found the problem and it's already in the report, or it didn't and the AI is wrong.
+// Matched on the title only; descriptions mention font sizes too often to be reliable.
+const MEASURED_TOPICS = [
+  {
+    topic: 'small text',
+    // "Small Font Size", "Mobile text is too small", "Text Size"; not "Too many font sizes"
+    pattern:
+      /\b(small|tiny|reduced|smaller|too small|increase|larger|bigger)\b[^.]{0,25}\b(font|text)\b|\b(font|text)[ -]?size\b[^.]{0,25}\b(small|tiny|reduced|increase|larger|bigger)\b|^(mobile:? )?(small )?(font|text) size$|\b(font|text)\b (is |are )?(too )?(small|tiny)\b/i,
+  },
+  { topic: 'tap target size', pattern: /\b(tap|touch|click(able)?|hit)[ -]?(target|area)s?\b|\btarget size\b/i },
+  {
+    topic: 'horizontal overflow',
+    pattern: /\boverflow|horizontal(ly)? scroll|scrolls? (sideways|horizontally)|wider than the (screen|viewport)/i,
+  },
+  { topic: 'color contrast', pattern: /\b(color|colour) contrast\b|\bcontrast ratio\b|\blow contrast\b/i },
+];
+
+const measuredTopic = (title) => MEASURED_TOPICS.find(({ pattern }) => pattern.test(title))?.topic;
+
 export function normalizeVisual(issues) {
   return (
     mergeViewports(issues)
+      .filter((issue) => {
+        const topic = measuredTopic(issue.title);
+        if (topic) console.log(`Dropped AI issue already measured in code (${topic}): "${issue.title}"`);
+        return !topic;
+      })
       // Schema limits aren't enforced by every provider (e.g. Anthropic tool input)
       .slice(0, MAX_VISUAL_ISSUES)
       .map((issue) => ({ ...issue, source: 'ai' }))
