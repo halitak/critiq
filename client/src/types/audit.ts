@@ -33,11 +33,14 @@ export interface AuditIssue {
 
 export interface AuditReport {
   /**
-   * 0-100. Each issue removes a share of the remaining score: critical 15%, major 8%,
-   * minor 3%. It never bottoms out at 0, and ≈ visual × accessibility / 100.
+   * 0-100, weighted average of `scores`: 60% accessibility, 40% visual.
+   * Always lies between the two sub-scores.
    */
   score: number
-  /** Same formula applied to just the AI + check (visual) or axe (accessibility) issues */
+  /**
+   * Each issue removes a share of the remaining 100: critical 15%, major 8%, minor 3%.
+   * visual = AI + check issues, accessibility = axe issues.
+   */
   scores: { visual: number; accessibility: number }
   summary: string
   issues: AuditIssue[]
