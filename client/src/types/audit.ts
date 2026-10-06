@@ -24,10 +24,10 @@ export interface AuditIssue {
   suggestion: string
   /**
    * "ai" = visual review by the model, "axe" = automated accessibility check,
-   * "check" = measured in the browser (small text, horizontal overflow)
+   * "check" = measured in the browser (small text, small tap targets, horizontal overflow)
    */
   source: 'ai' | 'axe' | 'check'
-  /** Rule docs, axe issues only */
+  /** Fix docs: axe rule pages, or WCAG for measured tap targets */
   learnMoreUrl?: string
 }
 
@@ -61,6 +61,11 @@ export interface AccessibilityViolation {
 /** Measured in the mobile context by server/src/measure.js */
 export interface LayoutChecks {
   smallText: { fontSize: number; count: number; examples: { text: string; selector: string }[] }[]
+  /** Targets axe left "incomplete" that measure under 24px without enough spacing */
+  smallTargets: {
+    count: number
+    examples: { selector: string; width: number; height: number; spacing: number }[]
+  } | null
   overflow: {
     viewportWidth: number
     pageWidth: number

@@ -16,12 +16,12 @@ export async function analyze() {
         suggestion: 'Darken the text to at least a 4.5:1 contrast ratio: `.hero p { color: #595959; }`',
       },
       {
-        title: 'Tap targets too small on mobile',
+        title: 'Primary action competes with secondary links',
         severity: 'major',
-        category: 'responsive',
+        category: 'ux',
         viewport: 'mobile',
-        description: 'Navigation links are packed closely and are smaller than 44x44px.',
-        suggestion: 'Give each link enough padding to reach 44x44px: `nav a { display: inline-block; padding: 12px; }`',
+        description: 'The sign-up button has the same weight as the five navigation links next to it.',
+        suggestion: 'Make the main action the only filled button: `.cta { background: #111; color: #fff; padding: 12px 20px; }`',
       },
       {
         title: 'Inconsistent heading sizes',

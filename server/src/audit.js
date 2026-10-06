@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
-import { MAX_EXAMPLES, measureMobile } from './measure.js';
+import { MAX_EXAMPLES, measureMobile, measureTargets } from './measure.js';
 
 const VIEWPORTS = {
   desktop: { viewport: { width: 1440, height: 900 } },
@@ -40,7 +40,18 @@ export async function runAudit(url) {
         // withRules runs only this rule, so desktop findings aren't duplicated.
         const axe = await new AxeBuilder({ page }).withRules(['target-size']).analyze();
         result.accessibility.push(...axe.violations.map((v) => toViolation(v, 'mobile')));
-        result.checks = await measureMobile(page);
+
+        // axe can't size targets whose content overflows them and marks them "incomplete";
+        // measure those ourselves. Selectors into iframes/shadow DOM have several parts; skip them.
+        const undecided = axe.incomplete
+          .flatMap((rule) => rule.nodes)
+          .filter((node) => node.target.length === 1)
+          .map((node) => node.target[0]);
+
+        result.checks = {
+          ...(await measureMobile(page)),
+          smallTargets: await measureTargets(page, undecided),
+        };
       }
 
       await context.close();

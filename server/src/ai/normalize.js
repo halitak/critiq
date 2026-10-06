@@ -4,7 +4,7 @@
 // The issue shape is mirrored by client/src/types/audit.ts (AuditIssue).
 
 import { MAX_VISUAL_ISSUES } from './prompt.js';
-import { MAX_EXAMPLES, MIN_FONT_PX } from '../measure.js';
+import { MAX_EXAMPLES, MIN_FONT_PX, MIN_TARGET_PX } from '../measure.js';
 
 // axe impact -> report severity
 const AXE_SEVERITY = {
@@ -78,6 +78,27 @@ export function normalizeChecks(checks) {
       viewport: 'mobile',
       description: `${count} text ${count === 1 ? 'element is' : 'elements are'} rendered at ${sizes}, e.g. ${examples}.`,
       suggestion: `Use at least ${MIN_FONT_PX}px (ideally 16px for body text) on small screens: \`@media (max-width: 640px) { body { font-size: 16px; } }\``,
+      source: 'check',
+    });
+  }
+
+  if (checks.smallTargets) {
+    const { count, examples } = checks.smallTargets;
+    const list = examples
+      .map((e) => `\`${e.selector}\` (${e.width}x${e.height}px, ${e.spacing}px clear)`)
+      .join(', ');
+    issues.push({
+      title: `Tap targets smaller than ${MIN_TARGET_PX}px on mobile`,
+      // Same as axe's target-size violations (impact serious -> major)
+      severity: 'major',
+      category: 'responsive',
+      viewport: 'mobile',
+      description:
+        `${count} ${count === 1 ? 'target is' : 'targets are'} under ${MIN_TARGET_PX}x${MIN_TARGET_PX}px ` +
+        `with less than ${MIN_TARGET_PX}px of clear space around them, e.g. ${list}. ` +
+        `axe couldn't size these because their content overflows the element, so they were measured directly.`,
+      suggestion: `Make each target at least ${MIN_TARGET_PX}x${MIN_TARGET_PX}px (44px is better on touch), e.g. \`${examples[0].selector} { display: inline-block; min-width: 44px; min-height: 44px; }\``,
+      learnMoreUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html',
       source: 'check',
     });
   }

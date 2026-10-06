@@ -1,8 +1,10 @@
 // Layout checks that are measured in the browser instead of judged by the AI.
-// Tap target size is not here: axe's `target-size` rule handles it, including the
-// WCAG 2.5.8 exceptions (enough spacing, inline links) that a plain size check misses.
+// Tap target size is mostly axe's `target-size` rule, which applies the WCAG 2.5.8
+// exceptions (enough spacing, inline links). measureTargets only covers what axe
+// leaves undecided.
 
 export const MIN_FONT_PX = 12;
+export const MIN_TARGET_PX = 24;
 
 /** Example elements kept per finding (axe violations and measured checks) */
 export const MAX_EXAMPLES = 5;
@@ -68,4 +70,72 @@ export function measureMobile(page) {
       overflow,
     };
   }, { minFontPx: MIN_FONT_PX, maxExamples: MAX_EXAMPLES });
+}
+
+/**
+ * Measures targets that axe's target-size rule left "incomplete". axe gives up when a
+ * child overflows the target's box: Hacker News vote arrows are an 18x10 <a> holding a
+ * 13x13 arrow, so all 30 of them ended up there instead of in violations.
+ *
+ * The effective size is the union of the element and its visible descendants. Like
+ * WCAG 2.5.8, an undersized target is fine when a 24px circle around its center
+ * doesn't touch another interactive element. Returns { count, examples } or null.
+ */
+export function measureTargets(page, selectors) {
+  if (!selectors.length) return null;
+
+  return page.evaluate(
+    ({ selectors, minPx, maxExamples }) => {
+      const INTERACTIVE = 'a[href], button, input, select, textarea, [role="button"], [onclick]';
+
+      const unionRect = (el) => {
+        let { left, top, right, bottom } = el.getBoundingClientRect();
+        for (const child of el.querySelectorAll('*')) {
+          const r = child.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) continue;
+          left = Math.min(left, r.left);
+          top = Math.min(top, r.top);
+          right = Math.max(right, r.right);
+          bottom = Math.max(bottom, r.bottom);
+        }
+        return { left, top, right, bottom, width: right - left, height: bottom - top };
+      };
+
+      // Distance from a point to the nearest edge of a rect (0 when inside it)
+      const distance = (x, y, r) =>
+        Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+
+      const others = [...document.querySelectorAll(INTERACTIVE)];
+      const small = [];
+
+      for (const selector of selectors) {
+        const el = document.querySelector(selector);
+        if (!el) continue;
+        const rect = unionRect(el);
+        if (rect.width >= minPx && rect.height >= minPx) continue;
+
+        const cx = (rect.left + rect.right) / 2;
+        const cy = (rect.top + rect.bottom) / 2;
+        let nearest = Infinity;
+        for (const other of others) {
+          if (other === el || el.contains(other) || other.contains(el)) continue;
+          const r = other.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) continue;
+          nearest = Math.min(nearest, distance(cx, cy, r));
+        }
+        if (nearest >= minPx / 2) continue;
+
+        small.push({
+          selector,
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          // Diameter of the clear circle around the center, as axe reports it
+          spacing: Math.round(nearest * 2 * 10) / 10,
+        });
+      }
+
+      return small.length ? { count: small.length, examples: small.slice(0, maxExamples) } : null;
+    },
+    { selectors, minPx: MIN_TARGET_PX, maxExamples: MAX_EXAMPLES },
+  );
 }
