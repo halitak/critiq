@@ -38,10 +38,39 @@ export function scoreIssues(issues) {
   return Math.round(100 * remaining);
 }
 
+// Fixes for the most common axe rules. axe's failureSummary only says what failed
+// ("Element does not have an alt attribute"), so it goes in the description and these
+// say what to do. Other rules fall back to the failureSummary.
+const AXE_FIXES = {
+  'image-alt':
+    'Give every meaningful image a short `alt` that says what it shows: `<img src="logo.svg" alt="Acme home">`. ' +
+    'Give decorative images an empty alt so screen readers skip them: `<img src="spacer.gif" alt="">`.',
+  label:
+    'Connect each form field to a visible label: `<label for="search">Search</label> <input id="search" name="q">`. ' +
+    'If there is no room for visible text, name it with `aria-label`: `<input name="q" aria-label="Search">`.',
+  'color-contrast':
+    'Raise text contrast to at least 4.5:1 (3:1 for text 24px and up, or 18.5px bold). Darken the text instead of ' +
+    'making it smaller: `color: #595959` on white is 7:1, e.g. `.meta { color: #595959; }`.',
+  'link-name':
+    'Give links without visible text an accessible name. For an image link, use the image alt: ' +
+    '`<a href="/"><img src="logo.svg" alt="Home"></a>`; for an icon link, use `aria-label`: `<a href="/" aria-label="Home">…</a>`.',
+  'target-size':
+    'Make touch targets at least 24x24px, or keep 24px of clear space around smaller ones. Padding grows the target ' +
+    'without changing the look: `a.small { display: inline-block; padding: 6px 8px; min-height: 24px; }`.',
+  'landmark-one-main': 'Wrap the primary content in exactly one `<main>` element: `<main id="content">…</main>`.',
+  'page-has-heading-one':
+    'Add one `<h1>` that names the page. It can be styled like the surrounding text: `<h1 class="page-title">Top stories</h1>`.',
+  region:
+    'Put all content inside landmarks so screen reader users can jump between sections: ' +
+    '`<header>…</header> <main>…</main> <footer>…</footer>`.',
+};
+
 export function normalizeAxe(accessibility) {
   return accessibility.map((v) => {
     const elements = v.count === 1 ? '1 element' : `${v.count} elements`;
     const examples = v.examples.length ? ` e.g. ${v.examples.map((e) => `\`${e}\``).join(', ')}` : '';
+    const failure = cleanFailureSummary(v.failureSummary);
+    const fix = AXE_FIXES[v.id];
 
     return {
       title: v.help,
@@ -50,8 +79,9 @@ export function normalizeAxe(accessibility) {
       // The full rule set runs on desktop and covers the DOM shared by both viewports ("both");
       // target-size runs on mobile only
       viewport: v.viewport ?? 'both',
-      description: `Found on ${elements}${examples}.`,
-      suggestion: cleanFailureSummary(v.failureSummary) ?? `See the axe rule "${v.id}".`,
+      // With a template the failure detail moves here; without one it stays the suggestion
+      description: `Found on ${elements}${examples}.${fix && failure ? ` ${failure.replace(/.$/, '')}.` : ''}`,
+      suggestion: fix ?? failure ?? `See the axe rule "${v.id}".`,
       // Rendered as a link by the client rather than pasted into the suggestion text
       learnMoreUrl: v.helpUrl,
       source: 'axe',
