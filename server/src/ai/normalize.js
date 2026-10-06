@@ -80,7 +80,7 @@ export function normalizeAxe(accessibility) {
       // target-size runs on mobile only
       viewport: v.viewport ?? 'both',
       // With a template the failure detail moves here; without one it stays the suggestion
-      description: `Found on ${elements}${examples}.${fix && failure ? ` ${failure.replace(/.$/, '')}.` : ''}`,
+      description: `Found on ${elements}${examples}.${fix && failure ? ` ${failure.replace(/\.$/, '')}.` : ''}`,
       suggestion: fix ?? failure ?? `See the axe rule "${v.id}".`,
       // Rendered as a link by the client rather than pasted into the suggestion text
       learnMoreUrl: v.helpUrl,
