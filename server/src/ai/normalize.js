@@ -186,7 +186,10 @@ const MEASURED_TOPICS = [
 
 const measuredTopic = (title) => MEASURED_TOPICS.find(({ pattern }) => pattern.test(title))?.topic;
 
-export function normalizeVisual(issues) {
+/** classNames are "tag.class" entries from src/measure.js collectClassNames */
+export function normalizeVisual(issues, classNames = []) {
+  const tagOf = new Map(classNames.map((entry) => [entry.slice(entry.indexOf('.') + 1), entry.split('.')[0]]));
+
   return (
     mergeViewports(issues)
       .filter((issue) => {
@@ -196,8 +199,45 @@ export function normalizeVisual(issues) {
       })
       // Schema limits aren't enforced by every provider (e.g. Anthropic tool input)
       .slice(0, MAX_VISUAL_ISSUES)
-      .map((issue) => ({ ...issue, title: stripViewportPrefix(issue.title), source: 'ai' }))
+      .map((issue) => ({
+        ...issue,
+        title: stripViewportPrefix(issue.title),
+        suggestion: fixInlineSizing(issue.suggestion, tagOf),
+        source: 'ai',
+      }))
   );
+}
+
+// Vertical margins/padding and width/height do nothing on an inline element. The prompt
+// says so, but gemma3 still wrote `span.titleline { margin-bottom: 0.5em; }` for Hacker
+// News, so rules like that get `display: inline-block;` added here.
+const INLINE_TAGS = new Set(['span', 'a', 'em', 'strong', 'b', 'i', 'small', 'label', 'abbr', 'code', 'time', 'cite', 'q', 'sup', 'sub']);
+const SIZING_DECL = /(^|[;{\s])(margin(-top|-bottom)?|padding-(top|bottom)|(min-|max-)?(width|height))\s*:/i;
+const DISPLAY_DECL = /(^|[;{\s])display\s*:/i;
+
+// "td.title > span.titleline:hover" -> "span.titleline"
+const lastCompound = (selector) =>
+  selector.trim().split(/[\s>+~]+/).pop().replace(/::?[\w-]+(\([^)]*\))?/g, '');
+
+function isInlineSelector(selector, tagOf) {
+  const compound = lastCompound(selector);
+  const tag = compound.match(/^[a-z][a-z0-9]*/i)?.[0].toLowerCase();
+  if (tag) return INLINE_TAGS.has(tag);
+  // ".titleline" alone: use the tag it was seen on; unknown classes don't count as inline
+  const classes = [...compound.matchAll(/\.([\w-]+)/g)].map(([, name]) => name);
+  return classes.some((name) => INLINE_TAGS.has(tagOf.get(name)));
+}
+
+export function fixInlineSizing(text, tagOf = new Map()) {
+  return text.replace(/`([^`]+)`/g, (_, code) => {
+    const fixed = code.replace(/([^{}]+)\{([^}]*)\}/g, (rule, selector, decls) => {
+      if (!SIZING_DECL.test(decls) || DISPLAY_DECL.test(decls)) return rule;
+      // Every selector in the group must be inline; making an h1 inline-block would break it
+      if (!selector.split(',').every((part) => isInlineSelector(part, tagOf))) return rule;
+      return `${selector}{ display: inline-block;${decls.startsWith(' ') ? '' : ' '}${decls}}`;
+    });
+    return `\`${fixed}\``;
+  });
 }
 
 // axe lists every check that failed, e.g.
