@@ -212,3 +212,37 @@ export function collectClassNames(page) {
       .map(([name]) => name);
   }, MAX_CLASS_NAMES);
 }
+
+/**
+ * Text color, effective background and font size for each collected class, plus the
+ * page background. Used to check colors the AI suggests (src/ai/normalize.js
+ * fixContrast). The background is inherited from the nearest ancestor that has one,
+ * since most elements are transparent.
+ */
+export function collectStyles(page, classNames) {
+  return page.evaluate((classNames) => {
+    const isTransparent = (c) => c === 'transparent' || /rgba\([^)]*,\s*0\)$/.test(c);
+    const effectiveBackground = (el) => {
+      for (let e = el; e; e = e.parentElement) {
+        const bg = getComputedStyle(e).backgroundColor;
+        if (!isTransparent(bg)) return bg;
+      }
+      return 'rgb(255, 255, 255)';
+    };
+
+    const classes = {};
+    for (const entry of classNames) {
+      const name = entry.slice(entry.indexOf('.') + 1);
+      const el = document.querySelector(`${entry.split('.')[0]}.${CSS.escape(name)}`);
+      if (!el) continue;
+      const style = getComputedStyle(el);
+      classes[name] = {
+        color: style.color,
+        background: effectiveBackground(el),
+        fontSize: parseFloat(style.fontSize),
+        fontWeight: Number(style.fontWeight) || 400,
+      };
+    }
+    return { pageBackground: effectiveBackground(document.body), classes };
+  }, classNames);
+}

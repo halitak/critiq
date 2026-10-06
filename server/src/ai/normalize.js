@@ -186,8 +186,18 @@ const MEASURED_TOPICS = [
 
 const measuredTopic = (title) => MEASURED_TOPICS.find(({ pattern }) => pattern.test(title))?.topic;
 
-/** classNames are "tag.class" entries from src/measure.js collectClassNames */
-export function normalizeVisual(issues, classNames = []) {
+/**
+ * AI findings are judgment calls; "critical" is kept for definite automated failures.
+ * gemma3 marked "Mobile Layout - Content Cramming" on Hacker News as critical although
+ * the page is fully usable.
+ */
+const MAX_AI_SEVERITY = 'major';
+
+/**
+ * page.classNames are "tag.class" entries (src/measure.js collectClassNames),
+ * page.styles their colors and backgrounds (collectStyles).
+ */
+export function normalizeVisual(issues, { classNames = [], styles = null } = {}) {
   const tagOf = new Map(classNames.map((entry) => [entry.slice(entry.indexOf('.') + 1), entry.split('.')[0]]));
 
   return (
@@ -199,12 +209,20 @@ export function normalizeVisual(issues, classNames = []) {
       })
       // Schema limits aren't enforced by every provider (e.g. Anthropic tool input)
       .slice(0, MAX_VISUAL_ISSUES)
-      .map((issue) => ({
-        ...issue,
-        title: stripViewportPrefix(issue.title),
-        suggestion: fixInlineSizing(issue.suggestion, tagOf),
-        source: 'ai',
-      }))
+      .map((issue) => {
+        let { severity } = issue;
+        if (SEVERITY_RANK[severity] < SEVERITY_RANK[MAX_AI_SEVERITY]) {
+          console.log(`Capped AI issue severity ${severity} -> ${MAX_AI_SEVERITY}: "${issue.title}"`);
+          severity = MAX_AI_SEVERITY;
+        }
+        return {
+          ...issue,
+          severity,
+          title: stripViewportPrefix(issue.title),
+          suggestion: fixContrast(fixInlineSizing(issue.suggestion, tagOf), styles),
+          source: 'ai',
+        };
+      })
   );
 }
 
@@ -282,4 +300,89 @@ function mergeViewports(issues) {
     }
   }
   return [...byTitle.values()];
+}
+
+// --- Contrast of colors the AI suggests -------------------------------------------
+// gemma3 suggested `span.rank { color: #888; }` for Hacker News ranks that axe already
+// flagged at 3.54:1, i.e. a lighter gray on the same #f6f6ef background. Colors in AI
+// CSS rules are checked against the element's real background (src/measure.js
+// collectStyles) and pushed darker or lighter, keeping the hue, until they pass WCAG.
+
+const NAMED_COLORS = {
+  black: [0, 0, 0], white: [255, 255, 255], gray: [128, 128, 128], grey: [128, 128, 128],
+  silver: [192, 192, 192], red: [255, 0, 0], green: [0, 128, 0], blue: [0, 0, 255],
+  orange: [255, 165, 0], navy: [0, 0, 128], maroon: [128, 0, 0], purple: [128, 0, 128],
+};
+
+/** "#888", "#828282", "rgb(130, 130, 130)", "gray" -> [r, g, b], or null */
+export function parseColor(value) {
+  const v = value.trim().toLowerCase();
+  if (NAMED_COLORS[v]) return NAMED_COLORS[v];
+  let m = v.match(/^#([0-9a-f]{3})$/);
+  if (m) return [...m[1]].map((c) => parseInt(c + c, 16));
+  m = v.match(/^#([0-9a-f]{6})$/);
+  if (m) return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
+  m = v.match(/^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/);
+  if (m) return m.slice(1, 4).map(Number);
+  return null;
+}
+
+const toHex = (rgb) => `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, '0')).join('')}`;
+
+// WCAG 2 relative luminance and contrast ratio
+const luminance = (rgb) => {
+  const [r, g, b] = rgb.map((c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+export const contrastRatio = (a, b) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+/** Mixes fg toward black (light background) or white (dark one) until it reaches min */
+function ensureContrast(fg, bg, min) {
+  const target = luminance(bg) > 0.18 ? [0, 0, 0] : [255, 255, 255];
+  for (let t = 0; t <= 1.0001; t += 0.02) {
+    const mixed = fg.map((c, i) => c + (target[i] - c) * t);
+    if (contrastRatio(mixed, bg) >= min) return mixed;
+  }
+  return target;
+}
+
+// Large text (24px, or 18.66px bold) only needs 3:1
+const requiredRatio = (style) =>
+  style && (style.fontSize >= 24 || (style.fontSize >= 18.66 && style.fontWeight >= 700)) ? 3 : 4.5;
+
+/** styles: { pageBackground, classes: { name: { color, background, fontSize, fontWeight } } } */
+export function fixContrast(text, styles) {
+  if (!styles) return text;
+  return text.replace(/`([^`]+)`/g, (_, code) => {
+    const fixed = code.replace(/([^{}]+)\{([^}]*)\}/g, (rule, selector, decls) => {
+      const colorDecl = decls.match(/(^|[;{\s])color\s*:\s*([^;}]+)/i);
+      const fg = colorDecl && parseColor(colorDecl[2]);
+      if (!fg) return rule;
+
+      // Background: one set in the same rule, else the class's real one, else the page's
+      const bgDecl = decls.match(/background(-color)?\s*:\s*([^;}]+)/i);
+      const classes = [...lastCompound(selector).matchAll(/\.([\w-]+)/g)].map(([, name]) => name);
+      const style = classes.map((name) => styles.classes[name]).find(Boolean);
+      const bg = (bgDecl && parseColor(bgDecl[2])) ?? parseColor(style?.background ?? styles.pageBackground);
+      if (!bg) return rule;
+
+      const min = requiredRatio(style);
+      if (contrastRatio(fg, bg) >= min) return rule;
+      const better = toHex(ensureContrast(fg, bg, min));
+      console.log(
+        `Adjusted AI color ${colorDecl[2].trim()} -> ${better} on ${toHex(bg)} ` +
+          `(${contrastRatio(fg, bg).toFixed(2)}:1 -> ${contrastRatio(parseColor(better), bg).toFixed(2)}:1)`,
+      );
+      // Replace inside the color declaration only; the same value may appear in a background
+      const newDecls = decls.replace(colorDecl[0], colorDecl[0].replace(colorDecl[2].trim(), better));
+      return `${selector}{${newDecls}}`;
+    });
+    return `\`${fixed}\``;
+  });
 }

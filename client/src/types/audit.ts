@@ -99,6 +99,13 @@ export interface AuditResponse {
   screenshots: Record<Viewport, string>
   accessibility: AccessibilityViolation[]
   checks: LayoutChecks | null
+  /** Most used classes with their tag ("tr.athing"), given to the AI for CSS examples */
+  classNames: string[]
+  /** Real colors per class, used to keep AI-suggested colors above WCAG contrast */
+  styles: {
+    pageBackground: string
+    classes: Record<string, { color: string; background: string; fontSize: number; fontWeight: number }>
+  } | null
   report: AuditReport
 }
 

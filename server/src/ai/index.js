@@ -23,7 +23,7 @@ export async function analyzeAudit(audit) {
   const visual = await provider.analyze(audit);
 
   // Measured layout checks count as visual; axe and tap targets (WCAG 2.5.8) as accessibility
-  const visualIssues = [...normalizeVisual(visual.issues, audit.classNames), ...normalizeChecks(audit.checks)];
+  const visualIssues = [...normalizeVisual(visual.issues, audit), ...normalizeChecks(audit.checks)];
   const axeIssues = [...normalizeAxe(audit.accessibility), ...normalizeTargets(audit.checks?.smallTargets)];
   const issues = [...visualIssues, ...axeIssues].sort(bySeverity);
 

@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
-import { MAX_EXAMPLES, collectClassNames, measureMobile, measureTargets } from './measure.js';
+import { MAX_EXAMPLES, collectClassNames, collectStyles, measureMobile, measureTargets } from './measure.js';
 
 const VIEWPORTS = {
   desktop: { viewport: { width: 1440, height: 900 } },
@@ -18,7 +18,7 @@ export async function runAudit(url) {
   const browser = await chromium.launch();
 
   try {
-    const result = { url, screenshots: {}, accessibility: [], checks: null, classNames: [] };
+    const result = { url, screenshots: {}, accessibility: [], checks: null, classNames: [], styles: null };
 
     for (const [name, contextOptions] of Object.entries(VIEWPORTS)) {
       const context = await browser.newContext(contextOptions);
@@ -37,6 +37,8 @@ export async function runAudit(url) {
         result.accessibility.push(...axe.violations.map((v) => toViolation(v, 'both')));
         // Given to the AI so its CSS examples use selectors that exist on the page
         result.classNames = await collectClassNames(page);
+        // Colors the AI suggests are checked against these backgrounds
+        result.styles = await collectStyles(page, result.classNames);
       } else {
         // target-size (WCAG 2.2, 2.5.8) is off by default and matters most on touch screens.
         // withRules runs only this rule, so desktop findings aren't duplicated.
