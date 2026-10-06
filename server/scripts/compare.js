@@ -95,6 +95,7 @@ for (let i = 1; i <= runs; i++) {
       `${visual.length} AI issues (${seconds.toFixed(1)}s)`,
   );
   if (report.purpose) console.log(`  Purpose: ${report.purpose}`);
+  for (const d of report.discardedAi ?? []) console.log(`  x [${d.reason}] ${d.title} (${d.detail})`);
   for (const issue of visual) console.log(`  - [${issue.severity}] ${issue.title}`);
 }
 
@@ -159,7 +160,8 @@ const shrinksText = snippets.filter((code) =>
 const TABLE_TAGS = new Set(['tr', 'td', 'th', 'table', 'tbody', 'thead']);
 const flexOnTable = snippets.filter(
   (code) =>
-    /display:\s*(flex|grid)/.test(code) &&
+    // Same properties normalizeVisual's flex-on-table check looks for
+    /display\s*:\s*(inline-)?(flex|grid)\b|flex-(direction|wrap|flow)\s*:|justify-content\s*:|align-(items|content)\s*:|grid-template(-[a-z]+)?\s*:|place-(items|content)\s*:/i.test(code) &&
     ([...code.matchAll(/\.([A-Za-z_][\w-]*)/g)].some(([, name]) => TABLE_TAGS.has(tagOf.get(name))) ||
       /(^|[\s,>])(tr|td|th)\b/.test(code)),
 );

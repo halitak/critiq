@@ -15,6 +15,7 @@ const SOURCE_META = {
   ai: { label: 'AI review', Icon: Bot },
   axe: { label: 'Automated check', Icon: ShieldCheck },
   check: { label: 'Measured', Icon: Ruler },
+  'axe+check': { label: 'Automated + measured', Icon: ShieldCheck },
 } as const
 
 export function IssueCard({ issue }: { issue: AuditIssue }) {

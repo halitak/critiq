@@ -22,9 +22,13 @@ export async function analyzeAudit(audit) {
   // { purpose, summary, issues } (VISUAL_REPORT_SCHEMA)
   const visual = await provider.analyze(audit);
 
-  // Measured layout checks count as visual; axe and tap targets (WCAG 2.5.8) as accessibility
-  const visualIssues = [...normalizeVisual(visual.issues, audit), ...normalizeChecks(audit.checks)];
+  // Deterministic issues first: AI issues are validated against them.
+  // Measured layout checks count as visual; axe and tap targets (WCAG 2.5.8) as accessibility.
+  const checkIssues = normalizeChecks(audit.checks);
   const axeIssues = [...normalizeAxe(audit.accessibility), ...normalizeTargets(audit.checks?.smallTargets)];
+  const { issues: aiIssues, discarded } = normalizeVisual(visual.issues, audit, [...axeIssues, ...checkIssues]);
+
+  const visualIssues = [...aiIssues, ...checkIssues];
   const issues = [...visualIssues, ...axeIssues].sort(bySeverity);
 
   const scores = { visual: scoreIssues(visualIssues), accessibility: scoreIssues(axeIssues) };
@@ -35,5 +39,7 @@ export async function analyzeAudit(audit) {
     purpose: visual.purpose,
     summary: visual.summary,
     issues,
+    // AI issues that didn't make it, with the reason; not shown in the UI
+    discardedAi: discarded,
   };
 }

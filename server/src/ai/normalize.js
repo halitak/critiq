@@ -3,7 +3,6 @@
 // or check results and never sets the score.
 // The issue shape is mirrored by client/src/types/audit.ts (AuditIssue).
 
-import { MAX_VISUAL_ISSUES } from './prompt.js';
 import { MAX_EXAMPLES, MIN_FONT_PX, MIN_TARGET_PX } from '../measure.js';
 
 // axe impact -> report severity
@@ -62,12 +61,44 @@ const AXE_FIXES = {
     '`<header>…</header> <main>…</main> <footer>…</footer>`.',
 };
 
+/**
+ * A color-contrast fix with the page's real colors instead of the generic template.
+ * failureSummary describes the first failing element:
+ *   "Element has insufficient color contrast of 3.54 (foreground color: #828282,
+ *    background color: #f6f6ef, font size: 10.0pt ...). Expected contrast ratio of 4.5:1"
+ * The fix is the closest shade of the same color that reaches the expected ratio
+ * (darker on a light background, lighter on a dark one), on the class most examples use.
+ * Returns null when the summary can't be parsed, so the template is used instead.
+ */
+export function contrastFix(failure, examples = []) {
+  const fgText = failure?.match(/foreground color:\s*(#[0-9a-f]{3,6}|rgba?\([^)]*\))/i)?.[1];
+  const bgText = failure?.match(/background color:\s*(#[0-9a-f]{3,6}|rgba?\([^)]*\))/i)?.[1];
+  const fg = fgText && parseColor(fgText);
+  const bg = bgText && parseColor(bgText);
+  if (!fg || !bg) return null;
+  const min = Number(failure.match(/Expected contrast ratio of ([\d.]+):1/)?.[1]) || 4.5;
+
+  const better = ensureContrast(fg, bg, min);
+  const counts = new Map();
+  // Only the failing element itself: in ".title[align=right] > .rank" that's .rank, not .title
+  for (const name of examples.map(lastCompound).flatMap(classesIn)) counts.set(name, (counts.get(name) ?? 0) + 1);
+  const [cls] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? [];
+  const direction = luminance(bg) > 0.18 ? 'darker' : 'lighter';
+
+  return (
+    `Raise text contrast to at least ${min}:1. The text is ${toHex(fg)} on ${toHex(bg)} ` +
+    `(${contrastRatio(fg, bg).toFixed(2)}:1); the closest ${direction} shade that passes is ` +
+    `${toHex(better)} (${contrastRatio(better, bg).toFixed(2)}:1): \`${cls ? `.${cls}` : 'body'} { color: ${toHex(better)}; }\`. ` +
+    'Other failing elements may use other colors; check each one.'
+  );
+}
+
 export function normalizeAxe(accessibility) {
   return accessibility.map((v) => {
     const elements = v.count === 1 ? '1 element' : `${v.count} elements`;
     const examples = v.examples.length ? ` e.g. ${v.examples.map((e) => `\`${e}\``).join(', ')}` : '';
     const failure = cleanFailureSummary(v.failureSummary);
-    const fix = AXE_FIXES[v.id];
+    const fix = (v.id === 'color-contrast' && contrastFix(failure, v.examples)) || AXE_FIXES[v.id];
 
     return {
       title: v.help,
@@ -119,7 +150,8 @@ export function normalizeTargets(smallTargets) {
         `Make targets at least ${MIN_TARGET_PX}x${MIN_TARGET_PX}px (44px is better on touch), or keep ${MIN_TARGET_PX}px of ` +
         `clear space around smaller ones${scope}: \`${selector} { display: inline-block; min-width: 44px; min-height: 44px; }\``,
       learnMoreUrl: helpUrl ?? 'https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html',
-      source: 'axe',
+      // axe's verdicts plus targets measured in code
+      source: 'axe+check',
     },
   ];
 }
@@ -193,37 +225,109 @@ const measuredTopic = (title) => MEASURED_TOPICS.find(({ pattern }) => pattern.t
  */
 const MAX_AI_SEVERITY = 'major';
 
-/**
- * page.classNames are "tag.class" entries (src/measure.js collectClassNames),
- * page.styles their colors and backgrounds (collectStyles).
- */
-export function normalizeVisual(issues, { classNames = [], styles = null } = {}) {
-  const tagOf = new Map(classNames.map((entry) => [entry.slice(entry.indexOf('.') + 1), entry.split('.')[0]]));
+// How many AI issues reach the report, after validation; the prompt allows up to
+// MAX_VISUAL_ISSUES (prompt.js), but gemma3 tends to fill whatever room it gets
+export const MAX_AI_ISSUES = 3;
 
-  return (
-    mergeViewports(issues)
-      .filter((issue) => {
-        const topic = measuredTopic(issue.title);
-        if (topic) console.log(`Dropped AI issue already measured in code (${topic}): "${issue.title}"`);
-        return !topic;
-      })
-      // Schema limits aren't enforced by every provider (e.g. Anthropic tool input)
-      .slice(0, MAX_VISUAL_ISSUES)
-      .map((issue) => {
-        let { severity } = issue;
-        if (SEVERITY_RANK[severity] < SEVERITY_RANK[MAX_AI_SEVERITY]) {
-          console.log(`Capped AI issue severity ${severity} -> ${MAX_AI_SEVERITY}: "${issue.title}"`);
-          severity = MAX_AI_SEVERITY;
-        }
-        return {
-          ...issue,
-          severity,
-          title: stripViewportPrefix(issue.title),
-          suggestion: fixFontSize(fixContrast(fixInlineSizing(issue.suggestion, tagOf), styles), styles),
-          source: 'ai',
-        };
-      })
-  );
+const TABLE_TAGS = new Set(['table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th']);
+
+const backtickCode = (text) => [...(text ?? '').matchAll(/`([^`]+)`/g)].map(([, code]) => code);
+const classesIn = (code) => [...code.matchAll(/\.([A-Za-z_][\w-]*)/g)].map(([, name]) => name);
+
+/** Classes named by deterministic issues, per category ("color" -> {"rank", "sitestr", ...}) */
+function deterministicClasses(issues) {
+  const byCategory = new Map();
+  for (const issue of issues) {
+    // axe template suggestions use made-up example classes (".meta"); only the tap-target
+    // fix is built from the page (its shared selector)
+    const texts = [issue.description, issue.source === 'axe+check' ? issue.suggestion : ''];
+    const set = byCategory.get(issue.category) ?? new Set();
+    texts.flatMap(backtickCode).flatMap(classesIn).forEach((name) => set.add(name));
+    byCategory.set(issue.category, set);
+  }
+  return byCategory;
+}
+
+// display: flex/grid, or container properties that only work with it. gemma3 suggested
+// `td.subtext { flex-direction: column; }` for Hacker News: a no-op on a table cell, and
+// making it work would mean a display that breaks the table.
+const FLEX_OR_GRID =
+  /(^|[;{\s])(display\s*:\s*(inline-)?(flex|grid)\b|flex-(direction|wrap|flow)\s*:|justify-content\s*:|align-(items|content)\s*:|grid-template(-[a-z]+)?\s*:|place-(items|content)\s*:)/i;
+
+/** The first CSS rule that applies flex/grid layout to a table element, or null */
+function flexOnTable(suggestion, tagOf) {
+  for (const code of backtickCode(suggestion)) {
+    for (const [rule, selector, decls] of code.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      if (!FLEX_OR_GRID.test(decls)) continue;
+      const compound = lastCompound(selector);
+      const tag = compound.match(/^[a-z][a-z0-9]*/i)?.[0].toLowerCase();
+      const tags = tag ? [tag] : [...compound.matchAll(/\.([\w-]+)/g)].map(([, name]) => tagOf.get(name));
+      if (tags.some((t) => TABLE_TAGS.has(t))) return rule.trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * Cleans and validates the AI's issues. Returns { issues, discarded }; every dropped
+ * issue lands in discarded with a reason, and the report exposes it as `discardedAi`.
+ *
+ * page.classNames are "tag.class" entries (src/measure.js collectClassNames), page.styles
+ * their colors and backgrounds (collectStyles). deterministic are the axe and check issues.
+ */
+export function normalizeVisual(issues, { classNames = [], styles = null } = {}, deterministic = []) {
+  const tagOf = new Map(classNames.map((entry) => [entry.slice(entry.indexOf('.') + 1), entry.split('.')[0]]));
+  const covered = deterministicClasses(deterministic);
+  const discarded = [];
+  const discard = (issue, reason, detail) => {
+    console.log(`Discarded AI issue (${reason}: ${detail}): "${issue.title}"`);
+    discarded.push({ title: issue.title, severity: issue.severity, category: issue.category, reason, detail });
+  };
+
+  const kept = [];
+  for (const raw of mergeViewports(issues)) {
+    const topic = measuredTopic(raw.title);
+    if (topic) {
+      discard(raw, 'measured-topic', `already measured in code: ${topic}`);
+      continue;
+    }
+
+    let { severity } = raw;
+    if (SEVERITY_RANK[severity] < SEVERITY_RANK[MAX_AI_SEVERITY]) {
+      console.log(`Capped AI issue severity ${severity} -> ${MAX_AI_SEVERITY}: "${raw.title}"`);
+      severity = MAX_AI_SEVERITY;
+    }
+    const issue = {
+      ...raw,
+      severity,
+      title: stripViewportPrefix(raw.title),
+      suggestion: fixFontSize(fixContrast(fixInlineSizing(raw.suggestion, tagOf), styles), styles),
+      source: 'ai',
+    };
+
+    // Same elements AND same category as a deterministic issue: the code already reported
+    // it. Selector overlap alone isn't enough; a hierarchy issue about `.rank` is not the
+    // contrast issue about `.rank`.
+    const mentioned = [issue.description, issue.suggestion].flatMap(backtickCode).flatMap(classesIn);
+    const overlap = mentioned.find((name) => covered.get(issue.category)?.has(name));
+    if (overlap) {
+      discard(issue, 'duplicates-deterministic', `.${overlap} is already covered by a ${issue.category} finding`);
+      continue;
+    }
+
+    const tableRule = flexOnTable(issue.suggestion, tagOf);
+    if (tableRule) {
+      discard(issue, 'flex-on-table', `\`${tableRule}\` applies flex/grid layout to a table element (no effect, or breaks the table)`);
+      continue;
+    }
+
+    kept.push(issue);
+  }
+
+  // Keep the most severe; the sort is stable, so the model's order decides among equals
+  const ranked = [...kept].sort(bySeverity);
+  for (const issue of ranked.slice(MAX_AI_ISSUES)) discard(issue, 'over-limit', `only ${MAX_AI_ISSUES} AI issues are kept`);
+  return { issues: ranked.slice(0, MAX_AI_ISSUES), discarded };
 }
 
 // Vertical margins/padding and width/height do nothing on an inline element. The prompt

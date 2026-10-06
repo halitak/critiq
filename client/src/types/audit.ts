@@ -24,9 +24,10 @@ export interface AuditIssue {
   suggestion: string
   /**
    * "ai" = visual review by the model, "axe" = automated accessibility check,
-   * "check" = measured in the browser (small text, horizontal overflow); tap targets are "axe"
+   * "check" = measured in the browser (small text, horizontal overflow),
+   * "axe+check" = tap targets: axe's target-size verdicts plus targets measured in code
    */
-  source: 'ai' | 'axe' | 'check'
+  source: 'ai' | 'axe' | 'check' | 'axe+check'
   /** Fix docs: axe rule pages, or WCAG for measured tap targets */
   learnMoreUrl?: string
 }
@@ -46,6 +47,16 @@ export interface AuditReport {
   purpose: string
   summary: string
   issues: AuditIssue[]
+  /** AI issues dropped by server/src/ai/normalize.js normalizeVisual, with the reason */
+  discardedAi: DiscardedIssue[]
+}
+
+export interface DiscardedIssue {
+  title: string
+  severity: Severity
+  category: IssueCategory
+  reason: 'measured-topic' | 'duplicates-deterministic' | 'flex-on-table' | 'over-limit'
+  detail: string
 }
 
 /** axe-core violation, reduced by server/src/audit.js */
