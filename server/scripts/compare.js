@@ -100,21 +100,44 @@ console.log(`  Distinct AI issue titles: ${allKeys.size}`);
 console.log(`  In every run: ${common.length}${common.length ? ` (${common.join(', ')})` : ''}`);
 console.log(`  Seconds/run:   ${stats(results.map((r) => Math.round(r.seconds)))}`);
 
-// Class selectors in the AI's `code` snippets that do or don't exist on the page
-const pageClasses = new Set(audit.classNames ?? []);
-const used = results.flatMap(({ visual }) =>
-  visual.flatMap((issue) =>
-    [...issue.suggestion.matchAll(/`([^`]+)`/g)].flatMap(([, code]) =>
-      [...code.matchAll(/\.([A-Za-z_][\w-]*)/g)].map(([, name]) => name),
-    ),
-  ),
+// The AI's `code` snippets, checked against what the page actually has
+const snippets = results.flatMap(({ visual }) =>
+  visual.flatMap((issue) => [...issue.suggestion.matchAll(/`([^`]+)`/g)].map(([, code]) => code)),
 );
-const known = used.filter((name) => pageClasses.has(name));
-const invented = [...new Set(used.filter((name) => !pageClasses.has(name)))];
+
+// classNames look like "tr.athing"; map class -> tag
+const tagOf = new Map((audit.classNames ?? []).map((entry) => [entry.slice(entry.indexOf('.') + 1), entry.split('.')[0]]));
+const used = snippets.flatMap((code) => [...code.matchAll(/\.([A-Za-z_][\w-]*)/g)].map(([, name]) => name));
+const known = used.filter((name) => tagOf.has(name));
+const invented = [...new Set(used.filter((name) => !tagOf.has(name)))];
 console.log(
   `  CSS classes in AI suggestions: ${known.length} on the page, ${used.length - known.length} not` +
     (invented.length ? ` (${invented.slice(0, 8).join(', ')})` : ''),
 );
+
+// Contradictions with measurements or element types
+const shrinksText = snippets.filter((code) =>
+  [...code.matchAll(/font-size:\s*([\d.]+)px/g)].some(([, px]) => Number(px) < 12),
+);
+const TABLE_TAGS = new Set(['tr', 'td', 'th', 'table', 'tbody', 'thead']);
+const flexOnTable = snippets.filter(
+  (code) =>
+    /display:\s*(flex|grid)/.test(code) &&
+    ([...code.matchAll(/\.([A-Za-z_][\w-]*)/g)].some(([, name]) => TABLE_TAGS.has(tagOf.get(name))) ||
+      /(^|[\s,>])(tr|td|th)\b/.test(code)),
+);
+// Box properties that do nothing on an inline element unless its display changes
+const INLINE_TAGS = new Set(['span', 'a', 'em', 'strong', 'b', 'i', 'small', 'label']);
+const inlineBox = snippets.filter(
+  (code) =>
+    /(margin|padding)-(top|bottom)|(^|[\s{;])(width|height):/.test(code) &&
+    !/display:/.test(code) &&
+    ([...code.matchAll(/\.([A-Za-z_][\w-]*)/g)].some(([, name]) => INLINE_TAGS.has(tagOf.get(name))) ||
+      /(^|[\s,>])(span|a)(\.|\s|\{|$)/.test(code)),
+);
+console.log(`  Suggestions with font-size below 12px: ${shrinksText.length}`);
+console.log(`  Suggestions putting flex/grid on table elements: ${flexOnTable.length}`);
+console.log(`  Suggestions sizing an inline element without changing display: ${inlineBox.length}`);
 
 async function loadAudit(url, cacheFile) {
   if (cacheFile && existsSync(cacheFile)) {

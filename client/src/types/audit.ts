@@ -24,7 +24,7 @@ export interface AuditIssue {
   suggestion: string
   /**
    * "ai" = visual review by the model, "axe" = automated accessibility check,
-   * "check" = measured in the browser (small text, small tap targets, horizontal overflow)
+   * "check" = measured in the browser (small text, horizontal overflow); tap targets are "axe"
    */
   source: 'ai' | 'axe' | 'check'
   /** Fix docs: axe rule pages, or WCAG for measured tap targets */
@@ -66,10 +66,25 @@ export interface AccessibilityViolation {
 /** Measured in the mobile context by server/src/measure.js */
 export interface LayoutChecks {
   smallText: { fontSize: number; count: number; examples: { text: string; selector: string }[] }[]
-  /** Targets axe left "incomplete" that measure under 24px without enough spacing */
+  /**
+   * Tap targets under 24px without enough spacing: axe's target-size violations plus the
+   * ones axe couldn't decide and server/src/measure.js measured. Reported as one issue.
+   */
   smallTargets: {
     count: number
-    examples: { selector: string; width: number; height: number; spacing: number }[]
+    flaggedByAxe: number
+    measured: number
+    /** A class selector most targets share (".votelinks a"), when it covers at least half */
+    sharedSelector: string | null
+    sharedCount: number
+    examples: {
+      source: 'axe' | 'measured'
+      selector: string
+      width: number
+      height: number
+      spacing: number | null
+    }[]
+    helpUrl: string | null
   } | null
   overflow: {
     viewportWidth: number

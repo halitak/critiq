@@ -23,7 +23,9 @@ Rules:
 - If a problem appears on both screenshots, report it ONCE with viewport "both". Never write the same issue twice.
 - Only report issues you can point to in the screenshot. If unsure, don't report it.
 - Every suggestion must be concrete and include a short CSS or HTML example, e.g. "Give the article text more line height so long paragraphs are easier to follow: \`article p { line-height: 1.6; }\`".
-- In CSS examples, use only the class names listed in the user message, or plain element selectors (\`a\`, \`h1\`, \`nav\`) when none fits. Never invent class names.
+- In CSS examples, use only the classes listed in the user message (shown with their element, e.g. \`tr.athing\`), or plain element selectors (\`a\`, \`h1\`, \`nav\`) when none fits. Never invent class names.
+- The CSS must work for that element type. For example, don't put \`display: flex\` on a table row (\`tr\`), and don't set \`width\` or \`margin-top\` on an inline \`span\` or \`a\` without making it \`inline-block\`.
+- The user message lists what code measured on the page. Treat it as fact and never contradict it: if text is already smaller than 12px, never suggest making it smaller; if there is no horizontal overflow, don't claim content overflows or overlaps.
 - Never report more than ${MAX_VISUAL_ISSUES} issues, most impactful first.
 - summary is 2-3 sentences about the visual design and usability.
 
@@ -64,12 +66,32 @@ export const VISUAL_REPORT_SCHEMA = {
   required: ['purpose', 'summary', 'issues'],
 };
 
-// classNames come from the page itself (src/measure.js collectClassNames)
-export const buildUserText = ({ url, classNames = [] }) =>
+// classNames ("tr.athing") and checks come from the page itself (src/measure.js)
+export const buildUserText = ({ url, classNames = [], checks }) =>
   `Page URL: ${url}
 ${
   classNames.length
-    ? `Class names used most on this page: ${classNames.map((name) => `.${name}`).join(', ')}`
+    ? `Classes used most on this page, with their element: ${classNames.join(', ')}`
     : 'This page has no reusable class names; use element selectors in CSS examples.'
 }
+
+Measured by code on mobile (facts, do not contradict):
+${describeChecks(checks)}
+
 Review the two screenshots (desktop first, then mobile) and report the visual and usability issues.`;
+
+function describeChecks(checks) {
+  if (!checks) return '- (not measured)';
+  const { smallText = [], overflow, smallTargets } = checks;
+  return [
+    smallText.length
+      ? `- Text below 12px: ${smallText.map((g) => `${g.count} elements at ${g.fontSize}px`).join(', ')}. Don't suggest making it smaller.`
+      : '- No visible text below 12px.',
+    overflow
+      ? `- Horizontal overflow: the page is ${overflow.pageWidth}px wide on a ${overflow.viewportWidth}px screen.`
+      : '- No horizontal overflow: nothing sticks out of the screen and the page does not scroll sideways.',
+    smallTargets
+      ? `- Tap targets under 24px: ${smallTargets.count}${smallTargets.sharedSelector ? `, mostly \`${smallTargets.sharedSelector}\`` : ''}. Already reported.`
+      : '- No tap targets under 24px.',
+  ].join('\n');
+}

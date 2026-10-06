@@ -1,7 +1,7 @@
 import * as mock from './providers/mock.js';
 import * as ollama from './providers/ollama.js';
 import * as anthropic from './providers/anthropic.js';
-import { bySeverity, normalizeAxe, normalizeChecks, normalizeVisual, scoreIssues } from './normalize.js';
+import { bySeverity, normalizeAxe, normalizeChecks, normalizeTargets, normalizeVisual, scoreIssues } from './normalize.js';
 
 const providers = { mock, ollama, anthropic };
 
@@ -22,9 +22,9 @@ export async function analyzeAudit(audit) {
   // { purpose, summary, issues } (VISUAL_REPORT_SCHEMA)
   const visual = await provider.analyze(audit);
 
-  // Measured layout checks count as visual; axe (incl. mobile target-size) as accessibility
+  // Measured layout checks count as visual; axe and tap targets (WCAG 2.5.8) as accessibility
   const visualIssues = [...normalizeVisual(visual.issues), ...normalizeChecks(audit.checks)];
-  const axeIssues = normalizeAxe(audit.accessibility);
+  const axeIssues = [...normalizeAxe(audit.accessibility), ...normalizeTargets(audit.checks?.smallTargets)];
   const issues = [...visualIssues, ...axeIssues].sort(bySeverity);
 
   const scores = { visual: scoreIssues(visualIssues), accessibility: scoreIssues(axeIssues) };

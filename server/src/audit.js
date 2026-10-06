@@ -41,18 +41,23 @@ export async function runAudit(url) {
         // target-size (WCAG 2.2, 2.5.8) is off by default and matters most on touch screens.
         // withRules runs only this rule, so desktop findings aren't duplicated.
         const axe = await new AxeBuilder({ page }).withRules(['target-size']).analyze();
-        result.accessibility.push(...axe.violations.map((v) => toViolation(v, 'mobile')));
 
-        // axe can't size targets whose content overflows them and marks them "incomplete";
-        // measure those ourselves. Selectors into iframes/shadow DOM have several parts; skip them.
-        const undecided = axe.incomplete
-          .flatMap((rule) => rule.nodes)
-          .filter((node) => node.target.length === 1)
-          .map((node) => node.target[0]);
+        // Violations and the nodes axe couldn't decide (content overflowing the target) become
+        // one smallTargets finding instead of two. Selectors into iframes/shadow DOM have
+        // several parts; skip them.
+        const selectors = (list) =>
+          list
+            .flatMap((rule) => rule.nodes)
+            .filter((node) => node.target.length === 1)
+            .map((node) => node.target[0]);
+        const smallTargets = await measureTargets(page, {
+          failed: selectors(axe.violations),
+          undecided: selectors(axe.incomplete),
+        });
 
         result.checks = {
           ...(await measureMobile(page)),
-          smallTargets: await measureTargets(page, undecided),
+          smallTargets: smallTargets && { ...smallTargets, helpUrl: axe.violations[0]?.helpUrl ?? null },
         };
       }
 

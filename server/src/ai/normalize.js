@@ -17,7 +17,6 @@ const AXE_SEVERITY = {
 // Rules that fit a more specific category than "accessibility"
 const AXE_CATEGORY = {
   'color-contrast': 'color',
-  'target-size': 'responsive',
 };
 
 // Share of the remaining score each issue takes away
@@ -40,7 +39,8 @@ export function scoreIssues(issues) {
 
 // Fixes for the most common axe rules. axe's failureSummary only says what failed
 // ("Element does not have an alt attribute"), so it goes in the description and these
-// say what to do. Other rules fall back to the failureSummary.
+// say what to do. Other rules fall back to the failureSummary. target-size isn't here:
+// it never reaches normalizeAxe, see normalizeTargets.
 const AXE_FIXES = {
   'image-alt':
     'Give every meaningful image a short `alt` that says what it shows: `<img src="logo.svg" alt="Acme home">`. ' +
@@ -54,9 +54,6 @@ const AXE_FIXES = {
   'link-name':
     'Give links without visible text an accessible name. For an image link, use the image alt: ' +
     '`<a href="/"><img src="logo.svg" alt="Home"></a>`; for an icon link, use `aria-label`: `<a href="/" aria-label="Home">…</a>`.',
-  'target-size':
-    'Make touch targets at least 24x24px, or keep 24px of clear space around smaller ones. Padding grows the target ' +
-    'without changing the look: `a.small { display: inline-block; padding: 6px 8px; min-height: 24px; }`.',
   'landmark-one-main': 'Wrap the primary content in exactly one `<main>` element: `<main id="content">…</main>`.',
   'page-has-heading-one':
     'Add one `<h1>` that names the page. It can be styled like the surrounding text: `<h1 class="page-title">Top stories</h1>`.',
@@ -89,6 +86,44 @@ export function normalizeAxe(accessibility) {
   });
 }
 
+/**
+ * One tap-target issue for everything undersized on mobile: axe's target-size violations
+ * plus the targets axe couldn't decide and src/measure.js measured. It's a WCAG rule, so it
+ * counts toward the accessibility score like the other axe issues.
+ */
+export function normalizeTargets(smallTargets) {
+  if (!smallTargets) return [];
+  const { count, flaggedByAxe, measured, sharedSelector, sharedCount, examples, helpUrl } = smallTargets;
+
+  const list = examples
+    .map((e) => `\`${e.selector}\` (${e.width}x${e.height}px${e.spacing != null ? `, ${e.spacing}px clear` : ''})`)
+    .join(', ');
+  const sources = [
+    flaggedByAxe && `${flaggedByAxe} flagged by axe`,
+    measured && `${measured} measured directly because their content overflows the element, which axe can't size`,
+  ].filter(Boolean);
+  const selector = sharedSelector ?? examples[0].selector;
+  const scope = sharedSelector ? ` (covers ${sharedCount} of ${count})` : '';
+
+  return [
+    {
+      title: `Tap targets smaller than ${MIN_TARGET_PX}px on mobile`,
+      // axe's target-size impact is serious -> major
+      severity: 'major',
+      category: 'responsive',
+      viewport: 'mobile',
+      description:
+        `${count} ${count === 1 ? 'target is' : 'targets are'} under ${MIN_TARGET_PX}x${MIN_TARGET_PX}px with less than ` +
+        `${MIN_TARGET_PX}px of clear space around them (${sources.join('; ')}), e.g. ${list}.`,
+      suggestion:
+        `Make targets at least ${MIN_TARGET_PX}x${MIN_TARGET_PX}px (44px is better on touch), or keep ${MIN_TARGET_PX}px of ` +
+        `clear space around smaller ones${scope}: \`${selector} { display: inline-block; min-width: 44px; min-height: 44px; }\``,
+      learnMoreUrl: helpUrl ?? 'https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html',
+      source: 'axe',
+    },
+  ];
+}
+
 /** Issues from measured layout checks (src/measure.js) */
 export function normalizeChecks(checks) {
   if (!checks) return [];
@@ -108,27 +143,6 @@ export function normalizeChecks(checks) {
       viewport: 'mobile',
       description: `${count} text ${count === 1 ? 'element is' : 'elements are'} rendered at ${sizes}, e.g. ${examples}.`,
       suggestion: `Use at least ${MIN_FONT_PX}px (ideally 16px for body text) on small screens: \`@media (max-width: 640px) { body { font-size: 16px; } }\``,
-      source: 'check',
-    });
-  }
-
-  if (checks.smallTargets) {
-    const { count, examples } = checks.smallTargets;
-    const list = examples
-      .map((e) => `\`${e.selector}\` (${e.width}x${e.height}px, ${e.spacing}px clear)`)
-      .join(', ');
-    issues.push({
-      title: `Tap targets smaller than ${MIN_TARGET_PX}px on mobile`,
-      // Same as axe's target-size violations (impact serious -> major)
-      severity: 'major',
-      category: 'responsive',
-      viewport: 'mobile',
-      description:
-        `${count} ${count === 1 ? 'target is' : 'targets are'} under ${MIN_TARGET_PX}x${MIN_TARGET_PX}px ` +
-        `with less than ${MIN_TARGET_PX}px of clear space around them, e.g. ${list}. ` +
-        `axe couldn't size these because their content overflows the element, so they were measured directly.`,
-      suggestion: `Make each target at least ${MIN_TARGET_PX}x${MIN_TARGET_PX}px (44px is better on touch), e.g. \`${examples[0].selector} { display: inline-block; min-width: 44px; min-height: 44px; }\``,
-      learnMoreUrl: 'https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html',
       source: 'check',
     });
   }

@@ -73,19 +73,23 @@ export function measureMobile(page) {
 }
 
 /**
- * Measures targets that axe's target-size rule left "incomplete". axe gives up when a
- * child overflows the target's box: Hacker News vote arrows are an 18x10 <a> holding a
- * 13x13 arrow, so all 30 of them ended up there instead of in violations.
+ * All undersized tap targets on mobile, in one list:
+ * - `failed`: nodes axe's target-size rule flagged. They are kept as is.
+ * - `undecided`: nodes axe left "incomplete". axe gives up when a child overflows the
+ *   target's box: Hacker News vote arrows are an 18x10 <a> holding a 13x13 arrow, so all
+ *   30 of them ended up there. These are measured here like WCAG 2.5.8: the union of the
+ *   element and its visible descendants, and an undersized target is fine when a 24px
+ *   circle around its center doesn't touch another interactive element.
  *
- * The effective size is the union of the element and its visible descendants. Like
- * WCAG 2.5.8, an undersized target is fine when a 24px circle around its center
- * doesn't touch another interactive element. Returns { count, examples } or null.
+ * Also picks one selector for the fix: a class most targets share, either their own
+ * (`.btn`) or their nearest classed ancestor's (`.votelinks a`), so the suggestion covers
+ * all of them instead of naming one id. Returns null when nothing is too small.
  */
-export function measureTargets(page, selectors) {
-  if (!selectors.length) return null;
+export function measureTargets(page, { failed, undecided }) {
+  if (!failed.length && !undecided.length) return null;
 
   return page.evaluate(
-    ({ selectors, minPx, maxExamples }) => {
+    ({ failed, undecided, minPx, maxExamples }) => {
       const INTERACTIVE = 'a[href], button, input, select, textarea, [role="button"], [onclick]';
 
       const unionRect = (el) => {
@@ -106,14 +110,7 @@ export function measureTargets(page, selectors) {
         Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
 
       const others = [...document.querySelectorAll(INTERACTIVE)];
-      const small = [];
-
-      for (const selector of selectors) {
-        const el = document.querySelector(selector);
-        if (!el) continue;
-        const rect = unionRect(el);
-        if (rect.width >= minPx && rect.height >= minPx) continue;
-
+      const nearestOther = (el, rect) => {
         const cx = (rect.left + rect.right) / 2;
         const cy = (rect.top + rect.bottom) / 2;
         let nearest = Infinity;
@@ -123,27 +120,64 @@ export function measureTargets(page, selectors) {
           if (r.width === 0 || r.height === 0) continue;
           nearest = Math.min(nearest, distance(cx, cy, r));
         }
-        if (nearest >= minPx / 2) continue;
+        return nearest;
+      };
 
-        small.push({
+      const targets = [];
+      const measure = (selector, source) => {
+        const el = document.querySelector(selector);
+        if (!el) return;
+        const rect = unionRect(el);
+        const nearest = nearestOther(el, rect);
+        // axe already decided its own failures; only undecided nodes are judged here
+        if (source === 'measured' && (rect.width >= minPx && rect.height >= minPx || nearest >= minPx / 2)) return;
+        targets.push({
+          el,
+          source,
           selector,
           width: Math.round(rect.width),
           height: Math.round(rect.height),
           // Diameter of the clear circle around the center, as axe reports it
-          spacing: Math.round(nearest * 2 * 10) / 10,
+          spacing: Number.isFinite(nearest) ? Math.round(nearest * 2 * 10) / 10 : null,
         });
-      }
+      };
+      failed.forEach((s) => measure(s, 'axe'));
+      undecided.forEach((s) => measure(s, 'measured'));
+      if (!targets.length) return null;
 
-      return small.length ? { count: small.length, examples: small.slice(0, maxExamples) } : null;
+      // Candidate shared selectors: own class (".btn") or nearest classed ancestor + tag (".votelinks a")
+      const candidates = new Map();
+      const vote = (sel) => candidates.set(sel, (candidates.get(sel) ?? 0) + 1);
+      for (const { el } of targets) {
+        const own = [...el.classList].filter((c) => /^[A-Za-z_][\w-]*$/.test(c));
+        own.forEach((c) => vote(`.${c}`));
+        let parent = el.parentElement;
+        while (parent && parent !== document.body && !parent.classList.length) parent = parent.parentElement;
+        const ancestor = parent && [...parent.classList].find((c) => /^[A-Za-z_][\w-]*$/.test(c));
+        if (ancestor) vote(`.${ancestor} ${el.tagName.toLowerCase()}`);
+      }
+      // Most covered wins; own classes come first in insertion order, so they win ties
+      const [best, covered] = [...candidates].sort((a, b) => b[1] - a[1])[0] ?? [null, 0];
+
+      return {
+        count: targets.length,
+        flaggedByAxe: targets.filter((t) => t.source === 'axe').length,
+        measured: targets.filter((t) => t.source === 'measured').length,
+        // Only worth using when it covers at least half of the targets
+        sharedSelector: covered * 2 >= targets.length ? best : null,
+        sharedCount: covered * 2 >= targets.length ? covered : 0,
+        examples: targets.slice(0, maxExamples).map(({ el, ...rest }) => rest),
+      };
     },
-    { selectors, minPx: MIN_TARGET_PX, maxExamples: MAX_EXAMPLES },
+    { failed, undecided, minPx: MIN_TARGET_PX, maxExamples: MAX_EXAMPLES },
   );
 }
 
 export const MAX_CLASS_NAMES = 15;
 
 /**
- * Most used class names on the page, for the AI's CSS examples. Utility classes
+ * Most used class names on the page with their tag ("tr.athing", "span.sitestr"), for the
+ * AI's CSS examples. The tag lets the model suggest properties that fit the element. Utility classes
  * (Tailwind-style "flex", "px-4", "md:hidden") and generated names ("css-1x2y3z",
  * "Button_root__a1B2c") are skipped: `.flex { ... }` would be bad advice, and hashed
  * names change on every build.
@@ -167,7 +201,9 @@ export function collectClassNames(page) {
       for (const name of el.classList) {
         if (/[:\[\]\/!.%@]/.test(name) || UTILITY_WORDS.has(name) || UTILITY_PREFIX.test(name)) continue;
         if (GENERATED.test(name) || name.length < 2) continue;
-        counts.set(name, (counts.get(name) ?? 0) + 1);
+        // Keyed with the tag ("tr.athing") so the AI can tell a table row from a div
+        const key = `${el.tagName.toLowerCase()}.${name}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
       }
     }
     return [...counts.entries()]
