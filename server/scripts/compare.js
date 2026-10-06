@@ -12,14 +12,20 @@
 // In practice cold and warm runs were equally stable, but cold rules the cache out
 // and its timings include model loading.
 // Pick the model with OLLAMA_MODEL=... in front of the command.
+//
+// Each run's report is saved to server/reports/<model>/<domain>-<timestamp>-<run>.json,
+// without the screenshots. The timestamp is taken once per invocation, so runs of the same
+// invocation sort together and nothing is overwritten.
 
 import 'dotenv/config';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { runAudit } from '../src/audit.js';
 import { analyzeAudit } from '../src/ai/index.js';
 import { resolveFontSize, scoreIssues, titleKey } from '../src/ai/normalize.js';
 import * as ollama from '../src/ai/providers/ollama.js';
+import * as anthropic from '../src/ai/providers/anthropic.js';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -50,6 +56,14 @@ console.log(
     `${audit.accessibility.length} axe violations\n`,
 );
 
+// "gemma3:12b" -> "gemma3-12b": colons aren't allowed in Windows file names
+const modelName = { ollama: ollama.MODEL, anthropic: anthropic.MODEL }[provider] ?? provider;
+const reportDir = new URL(`../reports/${modelName.replace(/[^\w.-]+/g, '-')}/`, import.meta.url);
+const domain = new URL(audit.url).hostname;
+// "2026-10-06T13-44-05": UTC ISO time, colons swapped for Windows file names
+const stamp = new Date().toISOString().slice(0, 19).replaceAll(':', '-');
+const savedFiles = [];
+
 const results = [];
 for (let i = 1; i <= runs; i++) {
   if (values.cold) await ollama.unload();
@@ -61,6 +75,20 @@ for (let i = 1; i <= runs; i++) {
   // scores.visual also includes measured checks; this isolates the model's contribution
   const aiScore = scoreIssues(visual);
   results.push({ report, visual, aiScore, seconds });
+
+  // Same shape as the API response, minus the base64 screenshots, plus run metadata
+  const { screenshots, ...rest } = audit;
+  const file = new URL(`${domain}-${stamp}-${i}.json`, reportDir);
+  mkdirSync(reportDir, { recursive: true });
+  writeFileSync(
+    file,
+    JSON.stringify(
+      { provider, model: modelName, run: i, cold: values.cold, seconds, savedAt: new Date().toISOString(), ...rest, report },
+      null,
+      2,
+    ),
+  );
+  savedFiles.push(file);
 
   console.log(
     `Run ${i}: AI ${aiScore}, visual ${report.scores.visual}, overall ${report.score}, ` +
@@ -147,6 +175,9 @@ const inlineBox = snippets.filter(
 console.log(`  Suggestions with font-size below 12px: ${shrinksText.length}`);
 console.log(`  Suggestions putting flex/grid on table elements: ${flexOnTable.length}`);
 console.log(`  Suggestions sizing an inline element without changing display: ${inlineBox.length}`);
+
+console.log('\nSaved reports:');
+for (const file of savedFiles) console.log(`  ${fileURLToPath(file)}`);
 
 async function loadAudit(url, cacheFile) {
   if (cacheFile && existsSync(cacheFile)) {

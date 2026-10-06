@@ -29,6 +29,7 @@ To measure how stable the AI review is, use the compare script. It loads the pag
 pnpm --filter critiq-server compare https://example.com --runs 5 --cold --cache /tmp/example.json
 ```
 
+- Every run's report is saved to `server/reports/<model>/<domain>-<timestamp>-<run>.json`, for example `reports/gemma3-12b/news.ycombinator.com-2026-10-06T10-49-30-1.json`. The timestamp is UTC, taken once per invocation, with `:` replaced by `-`. It has the same shape as the API response without `screenshots`, plus `provider`, `model`, `run`, `cold`, `seconds` and `savedAt`. Colons in model names become `-` for Windows. Nothing is overwritten. `server/reports/` is git-ignored.
 - `--cache` saves the captured audit, or loads it if the file already exists. This lets you compare prompt or model changes on exactly the same input.
 - `--cold` (Ollama only) unloads the model before each run. **Always use it when measuring variance.** Without it, Ollama's prompt cache makes runs 2..N repeat each other.
 - Choose the model per command with `OLLAMA_MODEL=gemma3:12b AI_PROVIDER=ollama pnpm --filter critiq-server compare ...`.

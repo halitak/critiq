@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SYSTEM_PROMPT, VISUAL_REPORT_SCHEMA, buildUserText } from '../prompt.js';
 
-const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-5-5';
+export const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-5-5';
 let client; // created lazily so other providers work without an API key
 
 const image = (data) => ({
