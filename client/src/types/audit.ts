@@ -42,6 +42,8 @@ export interface AuditReport {
    * visual = AI + check issues, accessibility = axe issues.
    */
   scores: { visual: number; accessibility: number }
+  /** One sentence from the AI on who the page is for and what they should do there */
+  purpose: string
   summary: string
   issues: AuditIssue[]
 }

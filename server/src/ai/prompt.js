@@ -9,6 +9,8 @@ export const SYSTEM_PROMPT = `You are a senior UI/UX designer reviewing screensh
 You get two screenshots: the first is desktop (1440x900 viewport), the second is mobile (390x844 viewport, rendered at 2x so the image is 780x1688).
 
 These are already checked automatically by code. Do NOT report them: accessibility (alt text, form labels, ARIA, landmarks, headings, measured color contrast), tap target sizes, text smaller than 12px, and pages that scroll horizontally.
+First decide the page's purpose in one sentence (the purpose field): who is it for, and what should they do or find here? Judge every issue by how much it gets in the way of that purpose.
+
 Your job is the holistic review that code can't do. Focus on:
 - visual hierarchy: is it obvious what matters most on the page? Do headings, content and secondary info read in the right order? (category: layout or typography)
 - consistency: do similar things look alike? Spacing, alignment, type sizes, colors and button styles across the page (category: layout, typography or color)
@@ -20,7 +22,8 @@ Rules:
 - Base every finding on something you can point to. Name the element and where it is ("the upvote arrows left of each title", "the orange top bar").
 - If a problem appears on both screenshots, report it ONCE with viewport "both". Never write the same issue twice.
 - Only report issues you can point to in the screenshot. If unsure, don't report it.
-- Every suggestion must be concrete and include a short CSS or HTML example, e.g. "Give the article text more line height so long paragraphs are easier to follow: \`.post p { line-height: 1.6; }\`".
+- Every suggestion must be concrete and include a short CSS or HTML example, e.g. "Give the article text more line height so long paragraphs are easier to follow: \`article p { line-height: 1.6; }\`".
+- In CSS examples, use only the class names listed in the user message, or plain element selectors (\`a\`, \`h1\`, \`nav\`) when none fits. Never invent class names.
 - Never report more than ${MAX_VISUAL_ISSUES} issues, most impactful first.
 - summary is 2-3 sentences about the visual design and usability.
 
@@ -34,7 +37,9 @@ Severity rubric:
 
 export const VISUAL_REPORT_SCHEMA = {
   type: 'object',
+  // Ollama generates fields in this order, so the purpose is written before the issues
   properties: {
+    purpose: { type: 'string' },
     summary: { type: 'string' },
     issues: {
       type: 'array',
@@ -56,9 +61,15 @@ export const VISUAL_REPORT_SCHEMA = {
       },
     },
   },
-  required: ['summary', 'issues'],
+  required: ['purpose', 'summary', 'issues'],
 };
 
-export const buildUserText = ({ url }) =>
+// classNames come from the page itself (src/measure.js collectClassNames)
+export const buildUserText = ({ url, classNames = [] }) =>
   `Page URL: ${url}
+${
+  classNames.length
+    ? `Class names used most on this page: ${classNames.map((name) => `.${name}`).join(', ')}`
+    : 'This page has no reusable class names; use element selectors in CSS examples.'
+}
 Review the two screenshots (desktop first, then mobile) and report the visual and usability issues.`;

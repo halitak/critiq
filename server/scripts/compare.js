@@ -66,6 +66,7 @@ for (let i = 1; i <= runs; i++) {
     `Run ${i}: AI ${aiScore}, visual ${report.scores.visual}, overall ${report.score}, ` +
       `${visual.length} AI issues (${seconds.toFixed(1)}s)`,
   );
+  if (report.purpose) console.log(`  Purpose: ${report.purpose}`);
   for (const issue of visual) console.log(`  - [${issue.severity}] ${issue.title}`);
 }
 
@@ -98,6 +99,22 @@ console.log(`  AI issues/run: ${stats(results.map((r) => r.visual.length))}`);
 console.log(`  Distinct AI issue titles: ${allKeys.size}`);
 console.log(`  In every run: ${common.length}${common.length ? ` (${common.join(', ')})` : ''}`);
 console.log(`  Seconds/run:   ${stats(results.map((r) => Math.round(r.seconds)))}`);
+
+// Class selectors in the AI's `code` snippets that do or don't exist on the page
+const pageClasses = new Set(audit.classNames ?? []);
+const used = results.flatMap(({ visual }) =>
+  visual.flatMap((issue) =>
+    [...issue.suggestion.matchAll(/`([^`]+)`/g)].flatMap(([, code]) =>
+      [...code.matchAll(/\.([A-Za-z_][\w-]*)/g)].map(([, name]) => name),
+    ),
+  ),
+);
+const known = used.filter((name) => pageClasses.has(name));
+const invented = [...new Set(used.filter((name) => !pageClasses.has(name)))];
+console.log(
+  `  CSS classes in AI suggestions: ${known.length} on the page, ${used.length - known.length} not` +
+    (invented.length ? ` (${invented.slice(0, 8).join(', ')})` : ''),
+);
 
 async function loadAudit(url, cacheFile) {
   if (cacheFile && existsSync(cacheFile)) {

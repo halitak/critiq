@@ -88,7 +88,7 @@ The weighted average is more lenient than the product. It keeps the ranking but 
 
 Also beware that extra prompt rules can backfire on small models: "don't put desktop/mobile in the title" made qwen2.5vl use exactly those words as titles.
 
-The response is `{ url, screenshots: {desktop, mobile}, accessibility, checks, report }`, where `report` is `{ score, scores: {visual, accessibility}, summary, issues }`.
+The response is `{ url, screenshots: {desktop, mobile}, accessibility, checks, classNames, report }`, where `report` is `{ score, scores: {visual, accessibility}, purpose, summary, issues }`.
 
 ### AI providers (`src/ai/providers/`)
 
@@ -98,7 +98,11 @@ Each provider exports `analyze(audit)` and returns the visual review only.
 - `ollama` is a local model (`OLLAMA_URL`, `OLLAMA_MODEL`, default `gemma3:12b`). It enforces the schema, including `maxItems`, through Ollama's `format` field, and sets `num_ctx`, `temperature: 0` and `seed` explicitly. An audit takes about 25-30s locally with gemma3:12b.
 - `anthropic` uses Claude (`ANTHROPIC_API_KEY`, `CLAUDE_MODEL`). It gets structured output by forcing a `submit_report` tool call whose `input_schema` is `VISUAL_REPORT_SCHEMA`. The client is created lazily so the other providers work without a key. Tool input doesn't enforce array limits, so `normalizeVisual` caps the issue count.
 
-`src/ai/prompt.js` is shared by the real providers: `SYSTEM_PROMPT`, `VISUAL_REPORT_SCHEMA` and `buildUserText`. The prompt asks for a CSS or HTML snippet in backticks in every suggestion; the client renders backtick spans as inline code. There is deliberately no `minItems`: since the score is penalty-based, forcing a minimum would make the model invent issues on clean pages. Images are always passed in the order desktop, then mobile, and the prompt text depends on that order. If you change the report shape, update `src/ai/index.js`, `src/ai/normalize.js`, the mock and `client/src/types/audit.ts` together.
+`src/ai/prompt.js` is shared by the real providers: `SYSTEM_PROMPT`, `VISUAL_REPORT_SCHEMA` and `buildUserText`. The prompt asks for a CSS or HTML snippet in backticks in every suggestion; the client renders backtick spans as inline code.
+
+- **Page purpose:** the model first states the page's purpose in one sentence and judges issues against it. `purpose` comes first in the schema because Ollama generates fields in schema order. The client shows it above the summary.
+- **Real class names:** `collectClassNames` (`src/measure.js`, desktop context) collects the 15 most used class names. It skips Tailwind-style utilities (`flex`, `px-4`, `md:hidden`) and generated names (`css-1x2y3z`, `Button_root__a1B2c`), since `.flex { … }` would be bad advice. `buildUserText` lists them and the prompt says to use only those, or element selectors. Measured on cached input (gemma3:12b): the CSS examples went from 0 real and 3 invented classes to 5 real and 0 invented on Hacker News, and from 2 invented to 1 on Stripe. On example.com, which has no classes, they use element selectors. Utility filtering is heuristic: on tailwindcss.com a few site-specific names such as `no-scrollbar` still get through.
+- **`compare` reports both:** it prints `Purpose:` and "CSS classes in AI suggestions: N on the page, M not". There is deliberately no `minItems`: since the score is penalty-based, forcing a minimum would make the model invent issues on clean pages. Images are always passed in the order desktop, then mobile, and the prompt text depends on that order. If you change the report shape, update `src/ai/index.js`, `src/ai/normalize.js`, the mock and `client/src/types/audit.ts` together.
 
 ### Client
 

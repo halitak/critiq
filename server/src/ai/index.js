@@ -18,7 +18,8 @@ export async function analyzeAudit(audit) {
   const provider = providers[name];
   if (!provider) throw new Error(`Unknown AI_PROVIDER: ${name}`);
 
-  // Providers only see the screenshots and return { summary, issues } (VISUAL_REPORT_SCHEMA)
+  // Providers only see the screenshots (plus class names) and return
+  // { purpose, summary, issues } (VISUAL_REPORT_SCHEMA)
   const visual = await provider.analyze(audit);
 
   // Measured layout checks count as visual; axe (incl. mobile target-size) as accessibility
@@ -31,6 +32,7 @@ export async function analyzeAudit(audit) {
   return {
     score: overallScore(scores),
     scores,
+    purpose: visual.purpose,
     summary: visual.summary,
     issues,
   };

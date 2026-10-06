@@ -139,3 +139,40 @@ export function measureTargets(page, selectors) {
     { selectors, minPx: MIN_TARGET_PX, maxExamples: MAX_EXAMPLES },
   );
 }
+
+export const MAX_CLASS_NAMES = 15;
+
+/**
+ * Most used class names on the page, for the AI's CSS examples. Utility classes
+ * (Tailwind-style "flex", "px-4", "md:hidden") and generated names ("css-1x2y3z",
+ * "Button_root__a1B2c") are skipped: `.flex { ... }` would be bad advice, and hashed
+ * names change on every build.
+ */
+export function collectClassNames(page) {
+  return page.evaluate((max) => {
+    const UTILITY_WORDS = new Set([
+      'flex', 'grid', 'block', 'inline', 'inline-block', 'inline-flex', 'hidden', 'contents',
+      'relative', 'absolute', 'fixed', 'sticky', 'static', 'container', 'sr-only', 'truncate',
+      'uppercase', 'lowercase', 'capitalize', 'italic', 'underline', 'antialiased', 'grow', 'shrink',
+      'border', 'rounded', 'shadow', 'transition', 'visible', 'invisible', 'clearfix',
+      'isolate', 'outline', 'transform', 'ring', 'group', 'peer', 'prose', 'dark', 'light',
+      'tabular-nums', 'undefined', 'null',
+    ]);
+    const UTILITY_PREFIX =
+      /^-?(p|px|py|pt|pb|pl|pr|ps|pe|m|mx|my|mt|mb|ml|mr|ms|me|w|h|size|min-w|min-h|max-w|max-h|gap|gap-x|gap-y|space-x|space-y|text|bg|border|rounded|shadow|font|leading|tracking|z|top|left|right|bottom|inset|grid-cols|grid-rows|col|row|col-span|row-span|order|opacity|duration|ease|delay|translate-x|translate-y|scale|rotate|fill|stroke|ring|outline|divide|from|via|to|basis|flex|items|justify|content|self|place|overflow|object|aspect|line-clamp|decoration|whitespace|break|cursor|select|pointer-events|list|align|animate|blur|backdrop|transition|shrink|grow|origin|translate|snap|group|peer|scroll|touch|will-change|mix-blend|filter|drop-shadow|columns|float|clear|box|table|caption|accent|caret|appearance|resize|transform|inline|grid|scheme|perspective|not)(-|$)/;
+    const GENERATED = /^(css|sc|jsx|emotion|svelte|astro)-[a-z0-9]+$|__[A-Za-z0-9_-]{4,}$|^[a-z]{1,3}[A-Z0-9][A-Za-z0-9]{4,}$/;
+
+    const counts = new Map();
+    for (const el of document.querySelectorAll('[class]')) {
+      for (const name of el.classList) {
+        if (/[:\[\]\/!.%@]/.test(name) || UTILITY_WORDS.has(name) || UTILITY_PREFIX.test(name)) continue;
+        if (GENERATED.test(name) || name.length < 2) continue;
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, max)
+      .map(([name]) => name);
+  }, MAX_CLASS_NAMES);
+}

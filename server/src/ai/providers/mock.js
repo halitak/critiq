@@ -4,6 +4,7 @@ export async function analyze() {
   await new Promise((r) => setTimeout(r, 1500)); // simulate latency
 
   return {
+    purpose: 'A product landing page that should get visitors to sign up.',
     summary:
       'Clean overall layout with a clear hierarchy on desktop. The mobile view suffers from small tap targets and the hero text is hard to read against the background.',
     issues: [

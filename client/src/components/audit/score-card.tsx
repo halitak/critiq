@@ -58,7 +58,14 @@ export function ScoreCard({ report }: { report: AuditReport }) {
         <CardHeader>
           <CardTitle>Summary</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
+          {report.purpose && (
+            <p className="text-pretty">
+              <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Purpose</span>
+              <br />
+              {report.purpose}
+            </p>
+          )}
           <p className="leading-relaxed text-pretty text-muted-foreground">{report.summary}</p>
         </CardContent>
       </Card>
