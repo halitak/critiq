@@ -243,6 +243,10 @@ export function collectStyles(page, classNames) {
         fontWeight: Number(style.fontWeight) || 400,
       };
     }
-    return { pageBackground: effectiveBackground(document.body), classes };
+    return {
+      pageBackground: effectiveBackground(document.body),
+      rootFontSize: parseFloat(getComputedStyle(document.documentElement).fontSize),
+      classes,
+    };
   }, classNames);
 }

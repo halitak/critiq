@@ -18,7 +18,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { runAudit } from '../src/audit.js';
 import { analyzeAudit } from '../src/ai/index.js';
-import { scoreIssues, titleKey } from '../src/ai/normalize.js';
+import { resolveFontSize, scoreIssues, titleKey } from '../src/ai/normalize.js';
 import * as ollama from '../src/ai/providers/ollama.js';
 
 const { values, positionals } = parseArgs({
@@ -116,8 +116,17 @@ console.log(
 );
 
 // Contradictions with measurements or element types
+// Resolves em/%/rem/pt against the class's real size, like fixFontSize does
 const shrinksText = snippets.filter((code) =>
-  [...code.matchAll(/font-size:\s*([\d.]+)px/g)].some(([, px]) => Number(px) < 12),
+  [...code.matchAll(/([^{}]+)\{([^}]*)\}/g)].some(([, selector, decls]) => {
+    const value = decls.match(/font-size\s*:\s*([^;}]+)/i)?.[1];
+    if (!value) return false;
+    const base = [...selector.matchAll(/\.([\w-]+)/g)]
+      .map(([, name]) => audit.styles?.classes[name]?.fontSize)
+      .find(Boolean);
+    const px = resolveFontSize(value, base, audit.styles?.rootFontSize);
+    return px != null && px < 12;
+  }),
 );
 const TABLE_TAGS = new Set(['tr', 'td', 'th', 'table', 'tbody', 'thead']);
 const flexOnTable = snippets.filter(

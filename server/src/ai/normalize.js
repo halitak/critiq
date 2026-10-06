@@ -219,7 +219,7 @@ export function normalizeVisual(issues, { classNames = [], styles = null } = {})
           ...issue,
           severity,
           title: stripViewportPrefix(issue.title),
-          suggestion: fixContrast(fixInlineSizing(issue.suggestion, tagOf), styles),
+          suggestion: fixFontSize(fixContrast(fixInlineSizing(issue.suggestion, tagOf), styles), styles),
           source: 'ai',
         };
       })
@@ -381,6 +381,69 @@ export function fixContrast(text, styles) {
       );
       // Replace inside the color declaration only; the same value may appear in a background
       const newDecls = decls.replace(colorDecl[0], colorDecl[0].replace(colorDecl[2].trim(), better));
+      return `${selector}{${newDecls}}`;
+    });
+    return `\`${fixed}\``;
+  });
+}
+
+// --- Font sizes the AI suggests ----------------------------------------------------
+// gemma3 suggested `td.subtext { font-size: 0.8em; }` for Hacker News metadata that is
+// already 10.7px on mobile, although the prompt says not to shrink text below 12px.
+// Sizes in AI CSS rules are resolved to px and raised to MIN_FONT_PX, keeping the unit.
+//
+// em and % are resolved against the class's own computed size (collectStyles). Strictly
+// they're relative to the parent; the two match whenever the class doesn't set its own
+// font-size, as on Hacker News.
+
+const PT_TO_PX = 4 / 3;
+
+/** "0.8em" -> px, or null when the base is unknown or the value isn't a plain length */
+export function resolveFontSize(value, basePx, rootPx = 16) {
+  const v = value.trim().toLowerCase();
+  if (v === 'smaller') return basePx ? basePx / 1.2 : null;
+  const m = v.match(/^(\d*\.?\d+)(px|pt|rem|em|%)$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  switch (m[2]) {
+    case 'px': return n;
+    case 'pt': return n * PT_TO_PX;
+    case 'rem': return n * rootPx;
+    case 'em': return basePx ? n * basePx : null;
+    case '%': return basePx ? (n / 100) * basePx : null;
+  }
+  return null;
+}
+
+/** The smallest value in the same unit that resolves to at least MIN_FONT_PX */
+function minimumIn(unit, basePx, rootPx) {
+  const round = (n) => Math.ceil(n * 100) / 100;
+  switch (unit) {
+    case 'pt': return `${round(MIN_FONT_PX / PT_TO_PX)}pt`;
+    case 'rem': return `${round(MIN_FONT_PX / rootPx)}rem`;
+    case 'em': return `${round(MIN_FONT_PX / basePx)}em`;
+    case '%': return `${Math.ceil((MIN_FONT_PX / basePx) * 100)}%`;
+    default: return `${MIN_FONT_PX}px`;
+  }
+}
+
+export function fixFontSize(text, styles) {
+  const rootPx = styles?.rootFontSize ?? 16;
+  return text.replace(/`([^`]+)`/g, (_, code) => {
+    const fixed = code.replace(/([^{}]+)\{([^}]*)\}/g, (rule, selector, decls) => {
+      const sizeDecl = decls.match(/(^|[;{\s])font-size\s*:\s*([^;}]+)/i);
+      if (!sizeDecl) return rule;
+      const value = sizeDecl[2].trim();
+
+      const classes = [...lastCompound(selector).matchAll(/\.([\w-]+)/g)].map(([, name]) => name);
+      const basePx = classes.map((name) => styles?.classes[name]?.fontSize).find(Boolean) ?? null;
+      const px = resolveFontSize(value, basePx, rootPx);
+      if (px == null || px >= MIN_FONT_PX) return rule;
+
+      const unit = value.match(/(px|pt|rem|em|%)$/i)?.[1].toLowerCase() ?? (basePx ? 'em' : 'px');
+      const better = minimumIn(unit, basePx, rootPx);
+      console.log(`Raised AI font-size ${value} (${px.toFixed(1)}px) -> ${better} (min ${MIN_FONT_PX}px)`);
+      const newDecls = decls.replace(sizeDecl[0], sizeDecl[0].replace(value, better));
       return `${selector}{${newDecls}}`;
     });
     return `\`${fixed}\``;
